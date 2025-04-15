@@ -1,0 +1,22 @@
+# ... rest of the configuration
+name = "cheese-pants-next-rpc"
+main = "worker/src/index.ts"
+compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-04-08"
+
+
+# Minification helps to keep the Worker bundle size down and improve start up time.
+minify = true
+
+
+[[durable_objects.bindings]]
+name = "CHEESE_PANTS_2"
+class_name = "CheesePants2"
+script_name = "cheese-pants-worker"
+
+[[services]]
+binding = "RPC_SERVICE"
+service = "cheese-pants-worker"
+entrypoint = "CheesePants2RPC"
+
+
