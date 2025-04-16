@@ -70,7 +70,9 @@ export default function Home() {
             <input
               type="text"
               value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
+              onChange={(e) => {
+                setPlayerName(e.target.value);
+              }}
               className="w-full border rounded px-3 py-2 text-black"
               placeholder="Enter your name"
             />
@@ -82,9 +84,9 @@ export default function Home() {
             <input
               type="text"
               value={requiredWords.word1}
-              onChange={(e) =>
-                setRequiredWords({ ...requiredWords, word1: e.target.value })
-              }
+              onChange={(e) => {
+                setRequiredWords({ ...requiredWords, word1: e.target.value });
+              }}
               className="w-full border rounded px-3 py-2 text-black"
               placeholder="Enter first word"
             />
@@ -96,19 +98,22 @@ export default function Home() {
             <input
               type="text"
               value={requiredWords.word2}
-              onChange={(e) =>
-                setRequiredWords({ ...requiredWords, word2: e.target.value })
-              }
+              onChange={(e) => {
+                setRequiredWords({ ...requiredWords, word2: e.target.value });
+              }}
               className="w-full border rounded px-3 py-2 text-black"
               placeholder="Enter second word"
             />
           </div>
-          <button
-            onClick={handleCreateGame}
-            className="w-full bg-blue-500 text-white dark:bg-blue-900 dark:text-blue-200 py-2 rounded hover:bg-blue-600 transition-colors"
-          >
-            Create Game
-          </button>
+          <div className="my-4">
+            <button
+              type="button"
+              onClick={handleCreateGame}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full"
+            >
+              Create Game
+            </button>
+          </div>
         </div>
       </div>
     </div>
