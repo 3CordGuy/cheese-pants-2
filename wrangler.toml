@@ -1,6 +1,6 @@
 # ... rest of the configuration
 name = "cheese-pants-2"
-main = "worker/src/index.ts"
+main = ".open-next/worker.js"
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-04-08"
 
@@ -10,7 +10,7 @@ minify = true
 
 
 # Use the new Workers + Assets to host the static frontend files
-assets = { directory = ".worker-next/assets", binding = "ASSETS" }
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
 
 [[durable_objects.bindings]]
 name = "CHEESE_PANTS_2"

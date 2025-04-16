@@ -53,5 +53,8 @@
 	 * Static Assets
 	 * https://developers.cloudflare.com/workers/static-assets/binding/
 	 */
-	"assets": { "directory": ".worker/assets", "binding": "ASSETS" }
+	"assets": {
+		"directory": "../.open-next/assets",
+		"binding": "ASSETS"
+	}
 }
