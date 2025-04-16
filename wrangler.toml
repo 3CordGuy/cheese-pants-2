@@ -1,6 +1,5 @@
 # ... rest of the configuration
-name = "cheese-pants-next-rpc"
-main = "worker/src/index.ts"
+name = "cheese-pants-2"
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-04-08"
 
