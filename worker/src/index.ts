@@ -52,6 +52,11 @@ export class CheesePants2RPC extends WorkerEntrypoint<Env> {
 		const stub = this.env.CHEESE_PANTS_2.get(id) as unknown as DurableObjectStub & CheesePants2Methods;
 		// Invoking Durable Object RPC method. Same `wrangler dev` session.
 		await stub.closeSessions();
+
+		// Note: Not supported in `wrangler dev`
+		// const id = cf.env.CURSOR_SESSIONS.idFromName("globalRoom");
+		// const stub = cf.env.CURSOR_SESSIONS.get(id);
+		// await stub.closeSessions();
 	}
 }
 
