@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
 import Image from "next/image";
+import { generate } from "random-words";
+import Dice from "./components/icons/Dice";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +54,13 @@ export default function Home() {
         playerName.trim()
       )}&playerId=${playerId}`
     );
+  };
+
+  const generateRandomWord = () => {
+    // Generate a random word with minLength 4 and maxLength 8 for better playability
+    const wordArray = generate({ exactly: 1, minLength: 4, maxLength: 8 });
+    // Return the first (and only) element from the array
+    return wordArray[0];
   };
 
   return (
@@ -111,29 +120,65 @@ export default function Home() {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               First Required Word
             </label>
-            <input
-              type="text"
-              value={requiredWords.word1}
-              onChange={(e) => {
-                setRequiredWords({ ...requiredWords, word1: e.target.value });
-              }}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-              placeholder="Enter first word"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={requiredWords.word1}
+                onChange={(e) => {
+                  setRequiredWords({ ...requiredWords, word1: e.target.value });
+                }}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10"
+                placeholder="Enter first word"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setRequiredWords({
+                    ...requiredWords,
+                    word1: generateRandomWord() as string,
+                  });
+                }}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 transition-colors group/button"
+                title="Choose for me"
+              >
+                <Dice size={24} className="text-blue-700" />
+                <span className="absolute left-1/2 transform -translate-x-1/2 -top-8 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/button:opacity-100 transition-opacity whitespace-nowrap">
+                  Choose for me
+                </span>
+              </button>
+            </div>
           </div>
           <div className="group">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               Second Required Word
             </label>
-            <input
-              type="text"
-              value={requiredWords.word2}
-              onChange={(e) => {
-                setRequiredWords({ ...requiredWords, word2: e.target.value });
-              }}
-              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-              placeholder="Enter second word"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={requiredWords.word2}
+                onChange={(e) => {
+                  setRequiredWords({ ...requiredWords, word2: e.target.value });
+                }}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all pr-10"
+                placeholder="Enter second word"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setRequiredWords({
+                    ...requiredWords,
+                    word2: generateRandomWord() as string,
+                  });
+                }}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 transition-colors group/button"
+                title="Choose for me"
+              >
+                <Dice size={24} className="text-blue-700" />
+                <span className="absolute left-1/2 transform -translate-x-1/2 -top-8 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/button:opacity-100 transition-opacity whitespace-nowrap">
+                  Choose for me
+                </span>
+              </button>
+            </div>
           </div>
           <div className="mt-6">
             <button
