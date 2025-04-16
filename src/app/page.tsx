@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
 import Image from "next/image";
 
+export const dynamic = "force-dynamic";
+
 export default function Home() {
   const router = useRouter();
   const [playerName, setPlayerName] = useState("");
@@ -54,7 +56,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-blue-950 p-4">
-      <div className="mb-6 flex justify-center animate-bounce">
+      <div className="mb-6 flex justify-center animate-slow-scale">
         <Image
           src="/cheese-pants-carving-transparent.png"
           alt="Cheese Pants Logo"

@@ -69,6 +69,18 @@ button {
   }
 }
 
+@keyframes slowScale {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out forwards;
 }
@@ -80,4 +92,8 @@ button {
 .animate-gradient {
   background-size: 200% 200%;
   animation: gradientShift 6s ease infinite;
+}
+
+.animate-slow-scale {
+  animation: slowScale 4s ease-in-out infinite;
 }
