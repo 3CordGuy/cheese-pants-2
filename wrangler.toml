@@ -1,5 +1,6 @@
 # ... rest of the configuration
 name = "cheese-pants-2"
+main = "worker/src/index.ts"
 compatibility_flags = ["nodejs_compat"]
 compatibility_date = "2025-04-08"
 
