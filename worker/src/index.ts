@@ -300,6 +300,9 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 						return;
 					}
 
+					// Extract only the first word if multiple words are submitted
+					const firstWord = parsedMsg.word.trim().split(/\s+/)[0];
+
 					// Find player name for the word author
 					const author = gameSession.players.find((p) => p.id === parsedMsg.playerId);
 					if (!author) {
@@ -309,7 +312,7 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 
 					// Create new word info object
 					const wordInfo: WordInfo = {
-						text: parsedMsg.word,
+						text: firstWord,
 						authorId: parsedMsg.playerId,
 						authorName: author.name,
 						addedAt: new Date().toISOString(),
@@ -318,7 +321,7 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 
 					// Check if the word is one of the required words
 					// Remove punctuation when checking to allow for words with punctuation
-					const wordWithoutPunctuation = parsedMsg.word.replace(/[.,!?;:'"()[\]{}]/g, '').toLowerCase();
+					const wordWithoutPunctuation = firstWord.replace(/[.,!?;:'"()[\]{}]/g, '').toLowerCase();
 
 					gameSession.requiredWords.forEach((requiredWord, index) => {
 						// If already matched, keep it matched

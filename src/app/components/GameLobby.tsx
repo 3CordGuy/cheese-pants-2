@@ -185,6 +185,33 @@ export const GameLobby = ({
               <li>End with punctuation to complete the game</li>
               <li>The funniest sentences win!</li>
             </ol>
+
+            {/* Display Required Words Section */}
+            <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-800">
+              <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2">
+                Required Words:
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {(() => {
+                  // Get required words from URL
+                  const url = new URL(window.location.href);
+                  const requiredWordsParam =
+                    url.searchParams.get("requiredWords");
+                  const words = requiredWordsParam
+                    ? decodeURIComponent(requiredWordsParam).split(",")
+                    : ["cheese", "pants"]; // Default words
+
+                  return words.map((word) => (
+                    <span
+                      key={word}
+                      className="px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400"
+                    >
+                      {word}
+                    </span>
+                  ));
+                })()}
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -84,6 +84,10 @@ export const GamePlaying = ({
                 <input
                   type="text"
                   value={wordInput}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
                   onChange={(e) => {
                     setWordInput(e.target.value);
                   }}
