@@ -16,6 +16,7 @@ export default function Home() {
     word1: "cheese",
     word2: "pants",
   });
+  const [turnTimeLimit, setTurnTimeLimit] = useState(0); // 0 means no limit
   const [error, setError] = useState("");
 
   const handleCreateGame = () => {
@@ -47,12 +48,13 @@ export default function Home() {
     const word1 = requiredWords.word1.trim();
     const word2 = requiredWords.word2.trim();
 
+    // Make sure turnTimeLimit is explicitly included in the URL
     router.push(
       `/game/${gameId}?requiredWords=${encodeURIComponent(
         word1
       )},${encodeURIComponent(word2)}&playerName=${encodeURIComponent(
         playerName.trim()
-      )}&playerId=${playerId}`
+      )}&playerId=${playerId}&turnTimeLimit=${turnTimeLimit}`
     );
   };
 
@@ -179,6 +181,26 @@ export default function Home() {
                 </span>
               </button>
             </div>
+          </div>
+          <div className="group">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              Turn Time Limit
+            </label>
+            <select
+              value={turnTimeLimit}
+              onChange={(e) => setTurnTimeLimit(parseInt(e.target.value, 10))}
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+            >
+              <option value="0">No time limit</option>
+              <option value="30">30 seconds</option>
+              <option value="60">1 minute</option>
+              <option value="120">2 minutes</option>
+              <option value="300">5 minutes</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              How long each player has to submit a word before their turn is
+              skipped.
+            </p>
           </div>
           <div className="mt-6">
             <button

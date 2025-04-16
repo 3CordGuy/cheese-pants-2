@@ -44,6 +44,8 @@ export type GameState = {
 	hasRequiredWords: boolean[];
 	currentPlayerIndex: number;
 	phase: 'lobby' | 'playing' | 'complete';
+	turnTimeLimit: number; // seconds per turn (0 for no limit)
+	lastTurnStartTime: string | null; // ISO 8601 timestamp when current turn started
 };
 
 export class CheesePants2RPC extends WorkerEntrypoint<Env> {
@@ -90,6 +92,8 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 			hasRequiredWords: [],
 			currentPlayerIndex: 0,
 			phase: 'lobby',
+			turnTimeLimit: 0,
+			lastTurnStartTime: null,
 		};
 
 		// Set up storage operations when state changes
@@ -116,14 +120,67 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 		});
 	}
 
+	async checkAndProcessTurnTimeout() {
+		// If game isn't in playing phase or no time limit, exit
+		if (this.gameState.phase !== 'playing' || this.gameState.turnTimeLimit <= 0 || !this.gameState.lastTurnStartTime) {
+			return false; // No timeout occurred
+		}
+
+		const now = new Date();
+		const turnStartTime = new Date(this.gameState.lastTurnStartTime);
+		const elapsedSeconds = (now.getTime() - turnStartTime.getTime()) / 1000;
+
+		// If the time limit has been exceeded, advance to the next player
+		if (elapsedSeconds >= this.gameState.turnTimeLimit) {
+			const timedOutPlayer = this.gameState.players[this.gameState.currentPlayerIndex];
+			const timedOutPlayerId = timedOutPlayer.id;
+			const timedOutPlayerName = timedOutPlayer.name;
+
+			// Send a specific message to the timed-out player
+			this.ctx.getWebSockets().forEach((ws) => {
+				const attachment = ws.deserializeAttachment();
+				if (!attachment) return;
+				const { id } = attachment;
+
+				if (id === timedOutPlayerId) {
+					// Message to the player whose turn timed out
+					ws.send(
+						JSON.stringify({
+							type: 'message',
+							data: 'Your time is up! Moving on to the next player!',
+						})
+					);
+				} else {
+					// Message to all other players
+					ws.send(
+						JSON.stringify({
+							type: 'message',
+							data: `${timedOutPlayerName}'s turn timed out!`,
+						})
+					);
+				}
+			});
+
+			await this.advanceToNextPlayer(this.gameState);
+			return true; // Timeout was processed
+		}
+
+		return false; // No timeout occurred
+	}
+
 	async webSocketMessage(ws: WebSocket, message: string) {
 		if (typeof message !== 'string') return;
+
+		await this.checkAndProcessTurnTimeout();
+
 		const parsedMsg: WsMessage = JSON.parse(message);
 
 		switch (parsedMsg.type) {
 			case 'test-connection':
-				// Send back the current game state for debugging
+				// Check for timeout and update game state
+				await this.checkAndProcessTurnTimeout();
 
+				// Send back the current game state
 				ws.send(JSON.stringify({ type: 'get-game-state-response', gameState: this.gameState }));
 				break;
 
@@ -189,6 +246,9 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 				}
 				this.gameState.phase = 'playing';
 				this.gameState.startedAt = new Date().toISOString();
+
+				// Initialize the turn start time when the game starts
+				this.gameState.lastTurnStartTime = new Date().toISOString();
 
 				// Save the updated game state
 				await this.saveGameState();
@@ -340,10 +400,8 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 					// Add the word to the game state
 					gameSession.words.push(wordInfo);
 
-					// Move to next player
-					gameSession.players[gameSession.currentPlayerIndex].isCurrentTurn = false;
-					gameSession.currentPlayerIndex = (gameSession.currentPlayerIndex + 1) % gameSession.players.length;
-					gameSession.players[gameSession.currentPlayerIndex].isCurrentTurn = true;
+					// Move to next player using our helper method (which handles the timer)
+					await this.advanceToNextPlayer(gameSession);
 
 					// Check if game is complete - all required words used AND sentence ends with punctuation
 					const allRequiredWordsUsed = gameSession.hasRequiredWords.every(Boolean);
@@ -407,6 +465,13 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 		const playerId = url.searchParams.get('playerId');
 		const playerName = url.searchParams.get('playerName');
 
+		// Get turn time limit - parse as int and default to 0 (no limit)
+		const turnTimeLimitParam = url.searchParams.get('turnTimeLimit');
+		console.log('Turn time limit parameter:', turnTimeLimitParam);
+
+		const turnTimeLimit = parseInt(turnTimeLimitParam || '0', 10);
+		console.log('Parsed turn time limit:', turnTimeLimit);
+
 		// Get required words from URL, filter out empty strings, and ensure we have at least 2 valid words
 		let requiredWords =
 			url.searchParams
@@ -439,10 +504,13 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 				hasRequiredWords: new Array(requiredWords.length).fill(false),
 				currentPlayerIndex: 0,
 				phase: 'lobby',
+				turnTimeLimit, // Set from URL parameter
+				lastTurnStartTime: null,
 			};
+			console.log('Game initialized with turn time limit:', this.gameState.turnTimeLimit);
 			await this.saveGameState();
 		} else {
-			console.log('Game already exists with required words:', this.gameState.requiredWords);
+			console.log('Game already exists with turn time limit:', this.gameState.turnTimeLimit);
 		}
 
 		// Serialize player ID as attachment for later use
@@ -452,6 +520,21 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 			status: 101,
 			webSocket: client,
 		});
+	}
+
+	// Helper method to advance to the next player's turn
+	async advanceToNextPlayer(gameSession: GameState) {
+		// Move to next player
+		gameSession.players[gameSession.currentPlayerIndex].isCurrentTurn = false;
+		gameSession.currentPlayerIndex = (gameSession.currentPlayerIndex + 1) % gameSession.players.length;
+		gameSession.players[gameSession.currentPlayerIndex].isCurrentTurn = true;
+
+		// Update the turn start time
+		gameSession.lastTurnStartTime = new Date().toISOString();
+
+		// Save state and broadcast updates
+		await this.saveGameState();
+		this.broadcast({ type: 'get-game-state-response', gameState: gameSession });
 	}
 }
 

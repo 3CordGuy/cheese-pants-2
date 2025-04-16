@@ -68,6 +68,10 @@ export function Game(props: { gameId: string }) {
   // Add state to track previous turn status
   const [wasCurrentPlayer, setWasCurrentPlayer] = useState(false);
 
+  // Get the turnTimeLimit from URL params
+  const turnTimeLimit = parseInt(searchParams.get("turnTimeLimit") || "0", 10);
+  console.log("Game initialized with turn time limit:", turnTimeLimit);
+
   // Add this function to request notification permissions
   const requestNotificationPermission = useCallback(async () => {
     if (!("Notification" in window)) {
@@ -214,7 +218,9 @@ export function Game(props: { gameId: string }) {
           props.gameId
         }&playerId=${playerId}&playerName=${encodeURIComponent(
           name
-        )}&requiredWords=${encodeURIComponent(requiredWords)}`
+        )}&requiredWords=${encodeURIComponent(
+          requiredWords
+        )}&turnTimeLimit=${turnTimeLimit}`
       );
 
       ws.onerror = (error) => {
@@ -256,7 +262,7 @@ export function Game(props: { gameId: string }) {
       // We'll set onclose handler after defining attemptReconnect
       return ws;
     },
-    [props.gameId, playerId, requiredWords]
+    [props.gameId, playerId, requiredWords, turnTimeLimit]
   );
 
   // Now define attemptReconnect with startWebSocket already defined
@@ -433,6 +439,26 @@ export function Game(props: { gameId: string }) {
       if (wsRef.current) {
         wsRef.current.close(1000); // 1000 = normal closure
       }
+    };
+  }, []);
+
+  // Add this effect to the Game component
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      // When window is focused, send a test-connection message to check timer and get fresh state
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log("Window focused, sending connection test to check timer");
+        const message: WsMessage = { type: "test-connection" };
+        wsRef.current.send(JSON.stringify(message));
+      }
+    };
+
+    // Add focus event listener
+    window.addEventListener("focus", handleWindowFocus);
+
+    // Clean up
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
     };
   }, []);
 

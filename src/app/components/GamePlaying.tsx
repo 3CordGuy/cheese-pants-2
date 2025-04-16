@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GameState } from "../../../worker/src/index";
 import { Word } from "./Word";
 import { PlayersList } from "./PlayersList";
@@ -25,6 +25,54 @@ export const GamePlaying = ({
   onChangeTurn,
 }: GamePlayingProps) => {
   const [wordInput, setWordInput] = useState("");
+  const [remainingTime, setRemainingTime] = useState<number | null>(null);
+  const [timerWarning, setTimerWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!gameState.turnTimeLimit || !gameState.lastTurnStartTime) {
+      setRemainingTime(null);
+      setTimerWarning(null);
+      console.log(
+        "No timer displayed - turnTimeLimit:",
+        gameState.turnTimeLimit,
+        "lastTurnStartTime:",
+        gameState.lastTurnStartTime
+      );
+      return;
+    }
+
+    console.log(
+      "Timer active - turnTimeLimit:",
+      gameState.turnTimeLimit,
+      "lastTurnStartTime:",
+      gameState.lastTurnStartTime
+    );
+
+    const updateTimer = () => {
+      const now = new Date();
+      const turnStartTime = new Date(gameState.lastTurnStartTime!);
+      const elapsedSeconds = Math.floor(
+        (now.getTime() - turnStartTime.getTime()) / 1000
+      );
+      const remaining = Math.max(0, gameState.turnTimeLimit - elapsedSeconds);
+      setRemainingTime(remaining);
+
+      if (remaining <= 0) {
+        setTimerWarning("Time's up! Moving to next player...");
+      } else if (remaining <= 10) {
+        setTimerWarning("Hurry up!");
+      } else if (remaining <= 30) {
+        setTimerWarning("Time is running out!");
+      } else {
+        setTimerWarning(null);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameState.turnTimeLimit, gameState.lastTurnStartTime]);
 
   const handleAddWord = () => {
     if (!wordInput.trim()) return;
@@ -32,11 +80,47 @@ export const GamePlaying = ({
     setWordInput("");
   };
 
+  const currentPlayerName =
+    gameState.players.find((p) => p.isCurrentTurn)?.name || "Unknown";
+
   return (
     <div className="md:flex md:gap-6">
       {/* Main content area */}
       <div className="md:flex-1 space-y-6">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 transition-all duration-300 hover:shadow-2xl">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Current Turn: {currentPlayerName}
+            </h3>
+
+            {gameState.turnTimeLimit > 0 && remainingTime !== null && (
+              <div className="flex items-center">
+                {isCurrentPlayer && timerWarning && (
+                  <div
+                    className={`mr-2 text-sm italic ${
+                      remainingTime < 10
+                        ? "text-red-600 dark:text-red-400 animate-pulse"
+                        : "text-amber-600 dark:text-amber-400"
+                    }`}
+                  >
+                    {timerWarning}
+                  </div>
+                )}
+
+                <div
+                  className={`text-sm font-bold rounded-full px-3 py-1 ${
+                    remainingTime < 10
+                      ? "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 animate-pulse"
+                      : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                  }`}
+                >
+                  {Math.floor(remainingTime / 60)}:
+                  {(remainingTime % 60).toString().padStart(2, "0")}
+                </div>
+              </div>
+            )}
+          </div>
+
           <h3 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent flex items-center">
             <svg
               className="w-6 h-6 mr-2 text-blue-500"
