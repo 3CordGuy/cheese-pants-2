@@ -10,6 +10,7 @@ import { GameComplete } from "./components/GameComplete";
 import { JoinForm } from "./components/JoinForm";
 import { GameHeader } from "./components/GameHeader";
 import { LoadingSpinner } from "./components/LoadingSpinner";
+import { Footer } from "./components/Footer";
 
 type MessageState = { in: string; out: string };
 type MessageAction = { type: "in" | "out"; message: string };
@@ -60,6 +61,72 @@ export function Game(props: { gameId: string }) {
 
   // Track if we're already connected to prevent double joins
   const [isJoining, setIsJoining] = useState(false);
+
+  // Add a new state for notifications permission at the top with other states
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+
+  // Add this function to request notification permissions
+  const requestNotificationPermission = useCallback(async () => {
+    if (!("Notification" in window)) {
+      console.log("This browser does not support notifications");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        setNotificationsEnabled(true);
+        console.log("Notification permission granted");
+      } else {
+        setNotificationsEnabled(false);
+        console.log("Notification permission denied");
+      }
+    } catch (error) {
+      console.error("Error requesting notification permission:", error);
+    }
+  }, []);
+
+  // Add this function to send a notification
+  const sendTurnNotification = useCallback(() => {
+    if (notificationsEnabled && Notification.permission === "granted") {
+      const notification = new Notification("Cheese Pants", {
+        body: "It's your turn!",
+        icon: "/favicon.ico",
+      });
+
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
+
+      // Automatically close after 5 seconds
+      setTimeout(() => notification.close(), 5000);
+    }
+  }, [notificationsEnabled]);
+
+  // Move the isCurrentPlayer definition here, before it's used in effects
+  const isCurrentPlayer = gameState?.players.find(
+    (p) => p.id === playerId
+  )?.isCurrentTurn;
+
+  const isAdmin = gameState?.startedById === playerId;
+
+  // Add an effect to handle turn notifications when game state changes
+  useEffect(() => {
+    if (gameState && isCurrentPlayer && document.visibilityState === "hidden") {
+      sendTurnNotification();
+    }
+  }, [gameState, isCurrentPlayer, sendTurnNotification]);
+
+  // Add an effect to check notification permissions on load
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "granted") {
+      setNotificationsEnabled(true);
+    }
+  }, []);
+
+  // Check if player is in the game
+  const isPlayerInGame = gameState?.players.some((p) => p.id === playerId);
 
   // Define startWebSocket first without the attempt reconnect dependency
   const startWebSocket = useCallback(
@@ -415,56 +482,66 @@ export function Game(props: { gameId: string }) {
     alert("Game link copied to clipboard!");
   };
 
-  const isCurrentPlayer = gameState?.players.find(
-    (p) => p.id === playerId
-  )?.isCurrentTurn;
-
-  const isAdmin = gameState?.startedById === playerId;
-
-  // Check if player is in the game
-  const isPlayerInGame = gameState?.players.some((p) => p.id === playerId);
-
   // Show loader when joining
   if (isJoining && !gameState) {
-    return <LoadingSpinner />;
+    return (
+      <div className="flex flex-col min-h-screen">
+        <div className="flex-grow flex items-center justify-center">
+          <LoadingSpinner />
+        </div>
+        <Footer />
+      </div>
+    );
   }
 
   // Show join form if not in game and not joining
   if (!isPlayerInGame && !isJoining) {
     return (
-      <div className="p-4">
-        <JoinForm
-          initialPlayerName={playerName}
-          isJoining={isJoining}
-          onJoin={handleJoinGame}
-        />
+      <div className="flex flex-col min-h-screen">
+        <div className="flex-grow p-4">
+          <JoinForm
+            initialPlayerName={playerName}
+            isJoining={isJoining}
+            onJoin={handleJoinGame}
+          />
+        </div>
+        <Footer />
       </div>
     );
   }
 
   // Render game content
   return (
-    <div className="p-4">
-      <div className="space-y-4">
-        <GameHeader onNewGame={handleNewGame} onShareGame={handleShareGame} />
+    <div className="flex flex-col min-h-screen">
+      <div className="flex-grow p-4">
+        <div className="space-y-4">
+          <GameHeader
+            onNewGame={handleNewGame}
+            onShareGame={handleShareGame}
+            onToggleNotifications={requestNotificationPermission}
+            notificationsEnabled={notificationsEnabled}
+          />
 
-        {/* Connection status indicator */}
-        {connectionStatus !== "connected" && gameState && (
-          <div
-            className={`text-center py-1 px-3 text-sm rounded-md ${
-              connectionStatus === "connecting"
-                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 animate-pulse"
-                : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
-            }`}
-          >
-            {connectionStatus === "connecting"
-              ? "Reconnecting to game..."
-              : "Disconnected - trying to reconnect..."}
-          </div>
-        )}
+          {/* Connection status indicator */}
+          {connectionStatus !== "connected" && gameState && (
+            <div
+              className={`text-center py-1 px-3 text-sm rounded-md ${
+                connectionStatus === "connecting"
+                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 animate-pulse"
+                  : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+              }`}
+            >
+              {connectionStatus === "connecting"
+                ? "Reconnecting to game..."
+                : "Disconnected - trying to reconnect..."}
+            </div>
+          )}
 
-        {gameState && renderGamePhase()}
+          {gameState && renderGamePhase()}
+        </div>
       </div>
+
+      <Footer />
     </div>
   );
 

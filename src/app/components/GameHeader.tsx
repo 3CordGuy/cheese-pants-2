@@ -5,9 +5,16 @@ import Image from "next/image";
 interface GameHeaderProps {
   onNewGame: () => void;
   onShareGame: () => void;
+  onToggleNotifications?: () => void;
+  notificationsEnabled?: boolean;
 }
 
-export const GameHeader = ({ onNewGame, onShareGame }: GameHeaderProps) => {
+export const GameHeader = ({
+  onNewGame,
+  onShareGame,
+  onToggleNotifications,
+  notificationsEnabled,
+}: GameHeaderProps) => {
   return (
     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-blue-100 dark:border-blue-900 mb-6 overflow-visible relative">
       {/* Blurred background logo */}
@@ -75,6 +82,41 @@ export const GameHeader = ({ onNewGame, onShareGame }: GameHeaderProps) => {
               </span>
             </span>
           </button>
+          {onToggleNotifications && (
+            <button
+              onClick={onToggleNotifications}
+              className={`${
+                notificationsEnabled
+                  ? "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                  : "bg-gradient-to-r from-gray-500 to-slate-500 hover:from-gray-600 hover:to-slate-600"
+              } text-white font-medium px-5 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer`}
+              aria-label={
+                notificationsEnabled
+                  ? "Disable notifications"
+                  : "Enable notifications"
+              }
+              title={
+                notificationsEnabled
+                  ? "Disable notifications"
+                  : "Enable notifications"
+              }
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="w-4 h-4"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {notificationsEnabled ? "Enabled" : "Notifications"}
+            </button>
+          )}
           <button
             onClick={onShareGame}
             className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white font-medium px-5 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer"
