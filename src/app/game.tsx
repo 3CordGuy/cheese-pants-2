@@ -65,30 +65,69 @@ export function Game(props: { gameId: string }) {
   // Add a new state for notifications permission at the top with other states
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
+  // Add state to track previous turn status
+  const [wasCurrentPlayer, setWasCurrentPlayer] = useState(false);
+
   // Add this function to request notification permissions
   const requestNotificationPermission = useCallback(async () => {
     if (!("Notification" in window)) {
       console.log("This browser does not support notifications");
+      alert("This browser does not support desktop notifications");
       return;
     }
 
     try {
+      // If already enabled, toggle off
+      if (notificationsEnabled) {
+        setNotificationsEnabled(false);
+        console.log("Notifications disabled by user");
+        return;
+      }
+
+      // Request permission
+      console.log("Requesting notification permission...");
       const permission = await Notification.requestPermission();
+      console.log("Notification permission response:", permission);
+
       if (permission === "granted") {
         setNotificationsEnabled(true);
         console.log("Notification permission granted");
+
+        // Show a test notification to confirm it's working
+        const notification = new Notification("Notifications Enabled", {
+          body: "You will be notified when it's your turn",
+          icon: "/favicon.ico",
+        });
+
+        setTimeout(() => notification.close(), 3000);
       } else {
         setNotificationsEnabled(false);
         console.log("Notification permission denied");
+        alert("Please enable notifications to be alerted when it's your turn");
       }
     } catch (error) {
       console.error("Error requesting notification permission:", error);
+      alert(
+        "Error requesting notification permission. Please check your browser settings."
+      );
     }
-  }, []);
+  }, [notificationsEnabled]);
 
   // Add this function to send a notification
   const sendTurnNotification = useCallback(() => {
-    if (notificationsEnabled && Notification.permission === "granted") {
+    if (!notificationsEnabled) {
+      console.log("Notifications not enabled");
+      return;
+    }
+
+    if (Notification.permission !== "granted") {
+      console.log("Notification permission not granted");
+      return;
+    }
+
+    console.log("Sending turn notification");
+
+    try {
       const notification = new Notification("Cheese Pants", {
         body: "It's your turn!",
         icon: "/favicon.ico",
@@ -101,6 +140,8 @@ export function Game(props: { gameId: string }) {
 
       // Automatically close after 5 seconds
       setTimeout(() => notification.close(), 5000);
+    } catch (error) {
+      console.error("Error sending notification:", error);
     }
   }, [notificationsEnabled]);
 
@@ -111,17 +152,36 @@ export function Game(props: { gameId: string }) {
 
   const isAdmin = gameState?.startedById === playerId;
 
-  // Add an effect to handle turn notifications when game state changes
+  // Improved effect to handle turn notifications - now detects when turn changes
   useEffect(() => {
-    if (gameState && isCurrentPlayer && document.visibilityState === "hidden") {
+    // Only run this effect when we have game state and can determine turns
+    if (!gameState) return;
+
+    const isPlayerTurn = isCurrentPlayer === true;
+    console.log("Turn check:", {
+      isPlayerTurn,
+      wasCurrentPlayer,
+      notificationsEnabled,
+    });
+
+    // If it just became the player's turn (wasn't their turn before)
+    if (isPlayerTurn && !wasCurrentPlayer) {
+      console.log("It's now your turn!");
       sendTurnNotification();
     }
-  }, [gameState, isCurrentPlayer, sendTurnNotification]);
+
+    // Update previous turn state
+    setWasCurrentPlayer(isPlayerTurn);
+  }, [gameState, isCurrentPlayer, wasCurrentPlayer, sendTurnNotification]);
 
   // Add an effect to check notification permissions on load
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      setNotificationsEnabled(true);
+    // Check if notification permission was previously granted
+    if ("Notification" in window) {
+      console.log("Current notification permission:", Notification.permission);
+      if (Notification.permission === "granted") {
+        setNotificationsEnabled(true);
+      }
     }
   }, []);
 
