@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
+import Image from "next/image";
 
 export default function Home() {
   const router = useRouter();
@@ -52,19 +53,46 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-      <div className="bg-white p-8 rounded-lg shadow-md w-96">
-        <h1 className="text-2xl font-bold mb-6 text-center text-blue-800 dark:text-blue-800">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-blue-950 p-4">
+      <div className="mb-6 flex justify-center animate-bounce">
+        <Image
+          src="/cheese-pants-carving-transparent.png"
+          alt="Cheese Pants Logo"
+          width={250}
+          height={250}
+          priority
+          className="drop-shadow-lg"
+        />
+      </div>
+      <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md border border-blue-100 dark:border-blue-900 transition-all duration-300 hover:shadow-2xl">
+        <h1 className="text-3xl font-bold mb-2 text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
           Cheese Pants
         </h1>
+        <p className="text-gray-600 dark:text-gray-300 text-center mb-6 text-sm">
+          The collaborative sentence-building game where creativity meets
+          absurdity!
+        </p>
+
+        <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-lg mb-6 text-sm">
+          <h3 className="font-bold text-blue-800 dark:text-blue-300 mb-2">
+            How to Play:
+          </h3>
+          <ul className="list-disc pl-5 space-y-1 text-gray-700 dark:text-gray-300">
+            <li>Players take turns adding one word at a time</li>
+            <li>Create a sentence that includes your required words</li>
+            <li>End with punctuation to complete your masterpiece</li>
+            <li>Share with friends for more chaotic fun!</li>
+          </ul>
+        </div>
+
         {error && (
-          <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
+          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg border-l-4 border-red-500 animate-pulse">
             {error}
           </div>
         )}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+        <div className="space-y-5">
+          <div className="group">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               Your Name
             </label>
             <input
@@ -73,12 +101,12 @@ export default function Home() {
               onChange={(e) => {
                 setPlayerName(e.target.value);
               }}
-              className="w-full border rounded px-3 py-2 text-black"
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               placeholder="Enter your name"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="group">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               First Required Word
             </label>
             <input
@@ -87,12 +115,12 @@ export default function Home() {
               onChange={(e) => {
                 setRequiredWords({ ...requiredWords, word1: e.target.value });
               }}
-              className="w-full border rounded px-3 py-2 text-black"
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               placeholder="Enter first word"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="group">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
               Second Required Word
             </label>
             <input
@@ -101,15 +129,15 @@ export default function Home() {
               onChange={(e) => {
                 setRequiredWords({ ...requiredWords, word2: e.target.value });
               }}
-              className="w-full border rounded px-3 py-2 text-black"
+              className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               placeholder="Enter second word"
             />
           </div>
-          <div className="my-4">
+          <div className="mt-6">
             <button
               type="button"
               onClick={handleCreateGame}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full"
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold py-3 px-4 rounded-lg w-full transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg"
             >
               Create Game
             </button>

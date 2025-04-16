@@ -2,6 +2,8 @@
 
 import { GameState, Player, WordInfo } from "../../../worker/src/index";
 import Trophy from "./icons/Trophy";
+import { getPlayerAvatarClass } from "../utils/colorUtils";
+import { useState } from "react";
 
 interface GameCompleteProps {
   gameState: GameState;
@@ -139,36 +141,126 @@ const getAchievements = (gameState: GameState): Achievement[] => {
     return achievements;
   }
 
-  // Most words contributed
+  // Most words contributed (with tie handling)
   if (playerStats[0].wordsAdded > 0) {
-    achievements.push({
-      title: "Word Master",
-      player: `${playerStats[0].name} (${playerStats[0].wordsAdded} words)`,
-    });
+    const maxWordsAdded = playerStats[0].wordsAdded;
+    const tiedPlayers = playerStats.filter(
+      (p) => p.wordsAdded === maxWordsAdded
+    );
+
+    if (tiedPlayers.length === 1) {
+      // No tie, just one winner
+      achievements.push({
+        title: "Word Master",
+        player: `${tiedPlayers[0].name} (${maxWordsAdded} words)`,
+      });
+    } else {
+      // Handle tie - find a tiebreaker
+      // Sort by average word length as a tiebreaker
+      tiedPlayers.sort((a, b) => b.avgWordLength - a.avgWordLength);
+
+      achievements.push({
+        title: "Word Master",
+        player: `${
+          tiedPlayers[0].name
+        } (${maxWordsAdded} words, avg length: ${tiedPlayers[0].avgWordLength.toFixed(
+          1
+        )})`,
+      });
+
+      // Add runner-up mentions for the tied players
+      if (tiedPlayers.length > 1) {
+        achievements.push({
+          title: "Word Master (Tied)",
+          player: `${tiedPlayers
+            .slice(1)
+            .map((p) => p.name)
+            .join(", ")} (${maxWordsAdded} words each)`,
+        });
+      }
+    }
   }
 
-  // Longest average word length
-  const vocabChamp = [...playerStats].sort(
-    (a, b) => b.avgWordLength - a.avgWordLength
-  )[0];
-  if (vocabChamp.avgWordLength > 0) {
-    achievements.push({
-      title: "Vocabulary Champion",
-      player: `${vocabChamp.name} (avg: ${vocabChamp.avgWordLength.toFixed(
-        1
-      )})`,
-    });
+  // Longest average word length (with tie handling)
+  if (playerStats.length > 0) {
+    const sortedByWordLength = [...playerStats].sort(
+      (a, b) => b.avgWordLength - a.avgWordLength
+    );
+
+    if (sortedByWordLength[0].avgWordLength > 0) {
+      const maxAvgLength = sortedByWordLength[0].avgWordLength;
+      const tiedPlayers = sortedByWordLength.filter(
+        (p) => Math.abs(p.avgWordLength - maxAvgLength) < 0.01 // Floating point comparison with small epsilon
+      );
+
+      if (tiedPlayers.length === 1) {
+        // No tie
+        achievements.push({
+          title: "Vocabulary Champion",
+          player: `${tiedPlayers[0].name} (avg: ${maxAvgLength.toFixed(1)})`,
+        });
+      } else {
+        // Handle tie - use word count as tiebreaker
+        tiedPlayers.sort((a, b) => b.wordsAdded - a.wordsAdded);
+
+        achievements.push({
+          title: "Vocabulary Champion",
+          player: `${tiedPlayers[0].name} (avg: ${maxAvgLength.toFixed(1)}, ${
+            tiedPlayers[0].wordsAdded
+          } words)`,
+        });
+
+        if (tiedPlayers.length > 1) {
+          achievements.push({
+            title: "Vocabulary Champion (Tied)",
+            player: `${tiedPlayers
+              .slice(1)
+              .map((p) => p.name)
+              .join(", ")} (avg: ${maxAvgLength.toFixed(1)})`,
+          });
+        }
+      }
+    }
   }
 
-  // Most required words used
-  const requiredWordsChamp = [...playerStats].sort(
-    (a, b) => b.requiredWordsUsed - a.requiredWordsUsed
-  )[0];
-  if (requiredWordsChamp.requiredWordsUsed > 0) {
-    achievements.push({
-      title: "Objective Completer",
-      player: `${requiredWordsChamp.name} (${requiredWordsChamp.requiredWordsUsed} req. words)`,
-    });
+  // Most required words used (with tie handling)
+  if (playerStats.length > 0) {
+    const sortedByRequiredWords = [...playerStats].sort(
+      (a, b) => b.requiredWordsUsed - a.requiredWordsUsed
+    );
+
+    if (sortedByRequiredWords[0].requiredWordsUsed > 0) {
+      const maxRequiredWords = sortedByRequiredWords[0].requiredWordsUsed;
+      const tiedPlayers = sortedByRequiredWords.filter(
+        (p) => p.requiredWordsUsed === maxRequiredWords
+      );
+
+      if (tiedPlayers.length === 1) {
+        // No tie
+        achievements.push({
+          title: "Objective Completer",
+          player: `${tiedPlayers[0].name} (${maxRequiredWords} req. words)`,
+        });
+      } else {
+        // Handle tie - use total word count as tiebreaker
+        tiedPlayers.sort((a, b) => b.wordsAdded - a.wordsAdded);
+
+        achievements.push({
+          title: "Objective Completer",
+          player: `${tiedPlayers[0].name} (${maxRequiredWords} req. words, ${tiedPlayers[0].wordsAdded} total words)`,
+        });
+
+        if (tiedPlayers.length > 1) {
+          achievements.push({
+            title: "Objective Completer (Tied)",
+            player: `${tiedPlayers
+              .slice(1)
+              .map((p) => p.name)
+              .join(", ")} (${maxRequiredWords} req. words each)`,
+          });
+        }
+      }
+    }
   }
 
   // Find who added the longest word
@@ -208,167 +300,279 @@ export const GameComplete = ({
   playerId,
   onStartNewGame,
 }: GameCompleteProps) => {
+  const [copiedMasterpiece, setCopiedMasterpiece] = useState(false);
+
+  const copyMasterpiece = () => {
+    const sentence = gameState.words.map((word) => word.text).join(" ");
+    navigator.clipboard.writeText(sentence);
+    setCopiedMasterpiece(true);
+    setTimeout(() => setCopiedMasterpiece(false), 2000);
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="border p-4 rounded bg-green-50 text-green-800">
-        <h3 className="font-bold mb-2 text-3xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 bg-clip-text text-transparent animate-pulse text-center">
-          🎉 Game Complete! 🏆
-        </h3>
-        <p className="font-light text-md -mt-1 text-gray-600 text-center italic">
-          Your Masterpiece Awaits...
-        </p>
-        <p className="italic mt-2 text-3xl text-black text-center">
-          {gameState.words.map((word, i) => (
-            <span
-              key={i}
-              className={word.isRequired ? "font-semibold text-blue-600" : ""}
-            >
-              {word.text}
-              {i < gameState.words.length - 1 ? " " : ""}
-            </span>
-          ))}
-        </p>
-      </div>
-
-      <div className="border p-4 rounded bg-gray-50 dark:bg-gray-800 dark:border-gray-700">
-        <h3 className="font-bold mb-3 text-xl dark:text-gray-200">
-          Game Statistics
-        </h3>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="bg-white p-3 rounded shadow-sm dark:bg-gray-700">
-            <h4 className="font-bold text-gray-700 dark:text-gray-300">
-              Completion Time
-            </h4>
-            <p className="text-2xl dark:text-white">
-              {calculateTimeDiff(
-                gameState.startedAt,
-                gameState.endedAt || new Date().toISOString()
-              )}
-            </p>
-          </div>
-
-          <div className="bg-white p-3 rounded shadow-sm dark:bg-gray-700">
-            <h4 className="font-bold text-gray-700 dark:text-gray-300">
-              Total Words
-            </h4>
-            <p className="text-2xl dark:text-white">{gameState.words.length}</p>
-          </div>
-
-          <div className="bg-white p-3 rounded shadow-sm dark:bg-gray-700">
-            <h4 className="font-bold text-gray-700 dark:text-gray-300">
-              Longest Word
-            </h4>
-            <p className="text-2xl dark:text-white">
-              {findLongestWord(gameState.words)}
-            </p>
-          </div>
-
-          <div className="bg-white p-3 rounded shadow-sm dark:bg-gray-700">
-            <h4 className="font-bold text-gray-700 dark:text-gray-300">
-              Sentence Length
-            </h4>
-            <p className="text-2xl dark:text-white">
-              {calculateSentenceLength(gameState.words)} chars
-            </p>
-          </div>
-        </div>
-
-        <h4 className="font-bold mb-2 dark:text-gray-200">Player Rankings</h4>
-        <div className="overflow-x-auto">
-          <table className="min-w-full bg-white dark:bg-gray-700">
-            <thead>
-              <tr className="bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200">
-                <th className="py-2 px-3 text-left">Player</th>
-                <th className="py-2 px-3 text-center">Words Added</th>
-                <th className="py-2 px-3 text-center">Avg Word Length</th>
-                <th className="py-2 px-3 text-center">Required Words</th>
-                <th className="py-2 px-3 text-center">Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calculatePlayerStats(gameState).map((player) => (
-                <tr
-                  key={player.id}
+    <div className="md:flex md:gap-6">
+      {/* Main content area */}
+      <div className="md:flex-1 space-y-6">
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl border border-green-200 dark:border-green-800 transition-all duration-300">
+          <h3 className="font-bold mb-2 text-3xl bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 bg-clip-text text-transparent animate-pulse text-center">
+            🎉 Game Complete! 🏆
+          </h3>
+          <p className="font-light text-md -mt-1 text-gray-600 dark:text-gray-400 text-center italic">
+            Your Masterpiece Awaits...
+          </p>
+          <div className="mt-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/30 dark:to-purple-900/30 p-6 rounded-lg shadow-inner">
+            <p className="italic mt-2 text-3xl text-black dark:text-white text-center">
+              {gameState.words.map((word, i) => (
+                <span
+                  key={i}
                   className={
-                    player.id === playerId
-                      ? "bg-blue-50 dark:bg-blue-900/20"
-                      : "dark:text-gray-200"
+                    word.isRequired
+                      ? "font-semibold text-blue-600 dark:text-blue-400"
+                      : ""
                   }
                 >
-                  <td className="py-2 px-3 border-t dark:border-gray-600">
-                    {player.name} {player.id === playerId ? "(You)" : ""}
-                  </td>
-                  <td className="py-2 px-3 border-t dark:border-gray-600 text-center">
-                    {player.wordsAdded}
-                  </td>
-                  <td className="py-2 px-3 border-t dark:border-gray-600 text-center">
-                    {player.avgWordLength.toFixed(1)}
-                  </td>
-                  <td className="py-2 px-3 border-t dark:border-gray-600 text-center">
-                    {player.requiredWordsUsed}
-                  </td>
-                  <td className="py-2 px-3 border-t dark:border-gray-600 text-center font-bold text-blue-600 dark:text-blue-400">
-                    {calculateScore(
-                      player.wordsAdded,
-                      player.avgWordLength
-                    ).toFixed(1)}
-                  </td>
-                </tr>
+                  {word.text}
+                  {i < gameState.words.length - 1 ? " " : ""}
+                </span>
               ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 p-2 rounded">
-          <p>
-            <span className="font-bold">Scoring Formula:</span> (Words Added ×
-            1.0) + (Avg Word Length × 0.7)
-          </p>
-          <p>
-            Players with higher word counts, longer words, or both will rank
-            higher in the table.
-          </p>
-        </div>
-
-        <h4 className="font-bold mt-4 mb-2 dark:text-gray-200">
-          Game Achievements
-        </h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-3">
-          {getAchievements(gameState).map((achievement, index) => (
-            <div
-              key={index}
-              className="bg-white p-3 rounded shadow-sm border-l-4 border-yellow-400 dark:bg-gray-700 dark:text-gray-200 flex items-center gap-6"
+            </p>
+          </div>
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={copyMasterpiece}
+              className="flex items-center gap-2 bg-indigo-100 dark:bg-indigo-900 hover:bg-indigo-200 dark:hover:bg-indigo-800 text-indigo-700 dark:text-indigo-300 py-2 px-4 rounded-lg transition-colors font-medium"
             >
-              <Trophy size={32} className="text-yellow-400 ml-2" />
-              <div className="flex flex-col">
-                <div className="font-bold text-yellow-700 dark:text-yellow-400">
-                  {achievement.title}
-                </div>
-                <div>{achievement.player}</div>
-              </div>
-            </div>
-          ))}
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+              {copiedMasterpiece ? "Copied!" : "Copy this masterpiece"}
+            </button>
+          </div>
         </div>
+
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 transition-all duration-300">
+          <h3 className="font-bold mb-3 text-xl text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Game Statistics
+          </h3>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm">
+              <h4 className="font-bold text-gray-700 dark:text-gray-300">
+                Completion Time
+              </h4>
+              <p className="text-2xl dark:text-white">
+                {calculateTimeDiff(
+                  gameState.startedAt,
+                  gameState.endedAt || new Date().toISOString()
+                )}
+              </p>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm">
+              <h4 className="font-bold text-gray-700 dark:text-gray-300">
+                Total Words
+              </h4>
+              <p className="text-2xl dark:text-white">
+                {gameState.words.length}
+              </p>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm">
+              <h4 className="font-bold text-gray-700 dark:text-gray-300">
+                Longest Word
+              </h4>
+              <p className="text-2xl dark:text-white">
+                {findLongestWord(gameState.words)}
+              </p>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm">
+              <h4 className="font-bold text-gray-700 dark:text-gray-300">
+                Sentence Length
+              </h4>
+              <p className="text-2xl dark:text-white">
+                {calculateSentenceLength(gameState.words)} chars
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h4 className="font-bold mb-4 text-lg text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Player Rankings
+            </h4>
+            <div className="overflow-x-auto bg-gray-50 dark:bg-gray-700 rounded-lg">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200">
+                    <th className="py-2 px-3 text-left">Player</th>
+                    <th className="py-2 px-3 text-center">Words</th>
+                    <th className="py-2 px-3 text-center">Avg Length</th>
+                    <th className="py-2 px-3 text-center">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {calculatePlayerStats(gameState).map((player) => (
+                    <tr
+                      key={player.id}
+                      className={
+                        player.id === playerId
+                          ? "bg-blue-50 dark:bg-blue-900/20"
+                          : "dark:text-gray-200"
+                      }
+                    >
+                      <td className="py-2 px-3 border-t dark:border-gray-600">
+                        <div className="flex items-center">
+                          <div
+                            className={`h-7 w-7 rounded-full ${getPlayerAvatarClass(
+                              player.id
+                            )} flex items-center justify-center text-white font-bold text-xs mr-2`}
+                          >
+                            {player.name.charAt(0).toUpperCase()}
+                          </div>
+                          <span>
+                            {player.name}{" "}
+                            {player.id === playerId ? "(You)" : ""}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 border-t dark:border-gray-600 text-center">
+                        {player.wordsAdded}
+                      </td>
+                      <td className="py-2 px-3 border-t dark:border-gray-600 text-center">
+                        {player.avgWordLength.toFixed(1)}
+                      </td>
+                      <td className="py-2 px-3 border-t dark:border-gray-600 text-center font-bold text-blue-600 dark:text-blue-400">
+                        {calculateScore(
+                          player.wordsAdded,
+                          player.avgWordLength
+                        ).toFixed(1)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 p-3 rounded-lg">
+            <p>
+              <span className="font-bold">Scoring Formula:</span> (Words Added ×
+              1.0) + (Avg Word Length × 0.7)
+            </p>
+            <p>
+              Players with higher word counts, longer words, or both will rank
+              higher in the table.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={onStartNewGame}
+          className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3 px-4 rounded-lg w-full transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-lg"
+        >
+          Start New Game
+        </button>
       </div>
 
-      <div className="border p-4 rounded">
-        <h3 className="font-bold mb-2">Players:</h3>
-        <ul className="list-disc pl-4">
-          {gameState.players.map((player) => (
-            <li key={player.id}>
-              {player.name} {player.id === playerId ? "(You)" : ""}
-              {gameState.startedById === player.id ? " (Host)" : ""}
-            </li>
-          ))}
-        </ul>
+      {/* Sidebar */}
+      <div className="md:w-80 lg:w-96 space-y-6 mt-6 md:mt-0">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 transition-all duration-300">
+          <h3 className="font-bold mb-3 text-lg text-gray-800 dark:text-gray-200">
+            Players:
+          </h3>
+          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden">
+            {gameState.players.map((player, index) => {
+              const isConnected = gameState.connectedPlayers.includes(
+                player.id
+              );
+              return (
+                <div
+                  key={player.id}
+                  className={`flex items-center py-3 px-4 ${
+                    index !== gameState.players.length - 1
+                      ? "border-b border-gray-200 dark:border-gray-600"
+                      : ""
+                  } ${
+                    player.id === playerId
+                      ? "bg-blue-50 dark:bg-blue-900/20"
+                      : ""
+                  }`}
+                >
+                  <div className="relative">
+                    <div
+                      className={`h-8 w-8 rounded-full ${getPlayerAvatarClass(
+                        player.id
+                      )} flex items-center justify-center text-white font-bold`}
+                    >
+                      {player.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div
+                      className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-white dark:border-gray-900 ${
+                        isConnected
+                          ? "bg-green-500 dark:bg-green-400"
+                          : "bg-gray-400 dark:bg-gray-500"
+                      }`}
+                      title={isConnected ? "Online" : "Offline"}
+                    ></div>
+                  </div>
+                  <div className="ml-3">
+                    <div className="flex items-center flex-wrap gap-2">
+                      <span className="font-medium">
+                        {player.name} {player.id === playerId ? "(You)" : ""}
+                      </span>
+                      {gameState.startedById === player.id && (
+                        <span className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full">
+                          Host
+                        </span>
+                      )}
+                      {!isConnected && (
+                        <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
+                          Offline
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 transition-all duration-300">
+          <h4 className="font-bold mb-3 text-lg text-gray-800 dark:text-gray-200">
+            Game Achievements
+          </h4>
+          <div className="space-y-3">
+            {getAchievements(gameState).map((achievement, index) => (
+              <div
+                key={index}
+                className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg shadow-sm border-l-4 border-yellow-400 flex items-center gap-6"
+              >
+                <Trophy size={32} className="text-yellow-400 ml-2" />
+                <div className="flex flex-col">
+                  <div className="font-bold text-yellow-700 dark:text-yellow-400">
+                    {achievement.title}
+                  </div>
+                  <div className="text-gray-700 dark:text-gray-300">
+                    {achievement.player}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-      <button
-        onClick={onStartNewGame}
-        className="bg-blue-500 text-white px-4 py-2 rounded w-full"
-      >
-        Start New Game
-      </button>
     </div>
   );
 };

@@ -25,10 +25,18 @@ function messageReducer(state: MessageState, action: MessageAction) {
   }
 }
 
+const RECONNECT_DELAY = 2000; // 2 seconds
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 export function Game(props: { gameId: string }) {
   const searchParams = useSearchParams();
   const wsRef = useRef<WebSocket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "disconnected" | "connecting"
+  >("disconnected");
 
   const [playerId] = useState(() => {
     // Try to get playerId from URL params, otherwise generate a new one
@@ -53,6 +61,7 @@ export function Game(props: { gameId: string }) {
   // Track if we're already connected to prevent double joins
   const [isJoining, setIsJoining] = useState(false);
 
+  // Define startWebSocket first without the attempt reconnect dependency
   const startWebSocket = useCallback(
     (name: string) => {
       const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -61,8 +70,12 @@ export function Game(props: { gameId: string }) {
         console.error(
           "WebSocket host not configured. Please set NEXT_PUBLIC_WS_HOST environment variable."
         );
+        setConnectionStatus("disconnected");
         return null;
       }
+
+      setConnectionStatus("connecting");
+
       const ws = new WebSocket(
         `${wsProtocol}://${wsHost}/ws?gameId=${
           props.gameId
@@ -73,11 +86,14 @@ export function Game(props: { gameId: string }) {
 
       ws.onerror = (error) => {
         console.error("WebSocket error:", error);
-        setIsJoining(false);
+        setConnectionStatus("disconnected");
+        ws.close();
       };
 
       ws.onopen = () => {
         console.log("WebSocket connected");
+        setConnectionStatus("connected");
+        reconnectAttemptsRef.current = 0; // Reset reconnect attempts on successful connection
         dispatchMessage({ type: "out", message: "get-game-state" });
         const message: WsMessage = { type: "get-game-state" };
         ws.send(JSON.stringify(message));
@@ -98,25 +114,121 @@ export function Game(props: { gameId: string }) {
             setGameState(messageData.gameState);
             setIsJoining(false);
             break;
-          case "game-complete":
-            alert(
-              `Game Complete! Final sentence: ${messageData.sentence.join(" ")}`
-            );
-            break;
           case "message":
             console.log(messageData.data);
             break;
         }
       };
 
-      ws.onclose = () => {
-        setGameState(null);
-        setIsJoining(false);
-      };
-
+      // We'll set onclose handler after defining attemptReconnect
       return ws;
     },
     [props.gameId, playerId, requiredWords]
+  );
+
+  // Now define attemptReconnect with startWebSocket already defined
+  const attemptReconnect = useCallback(() => {
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      console.log("Max reconnection attempts reached");
+      reconnectAttemptsRef.current = 0;
+      setConnectionStatus("disconnected");
+      return;
+    }
+
+    const nameFromUrl = searchParams.get("playerName");
+    if (!nameFromUrl) return;
+
+    console.log(
+      `Attempting to reconnect (${
+        reconnectAttemptsRef.current + 1
+      }/${MAX_RECONNECT_ATTEMPTS})...`
+    );
+    reconnectAttemptsRef.current++;
+    setConnectionStatus("connecting");
+
+    // Clear any existing timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        const ws = startWebSocket(decodeURIComponent(nameFromUrl));
+        if (ws) {
+          // Save the original onopen handler
+          const originalOnOpen = ws.onopen;
+
+          // Create a new onopen handler that combines both actions
+          ws.onopen = (event: Event) => {
+            // First call the original handler to ensure normal connection is established
+            if (originalOnOpen) {
+              // Since TypeScript has issues with the EventHandler types, we'll handle it carefully
+              try {
+                // Try invoking it as a function
+                if (typeof originalOnOpen === "function") {
+                  (originalOnOpen as (this: WebSocket, ev: Event) => void).call(
+                    ws,
+                    event
+                  );
+                }
+              } catch (error) {
+                console.error("Error calling original onopen handler:", error);
+              }
+            }
+
+            // Make sure we update the connection status
+            setConnectionStatus("connected");
+            console.log("Reconnection established, sending join message");
+            // Then send join message to reconnect
+            const message: WsMessage = {
+              type: "join",
+              gameId: props.gameId,
+              playerName: decodeURIComponent(nameFromUrl),
+              playerId: playerId,
+            };
+            console.log("Sending reconnect message:", message);
+            ws.send(JSON.stringify(message));
+          };
+
+          wsRef.current = ws;
+        }
+      }
+    }, RECONNECT_DELAY);
+  }, [props.gameId, searchParams, playerId, startWebSocket]);
+
+  // Update the WebSocket onclose handler
+  const enhanceWebSocketWithReconnect = useCallback(
+    (ws: WebSocket) => {
+      ws.onclose = (event) => {
+        console.log("WebSocket closed:", event);
+
+        // Don't attempt reconnect if this was a normal closure or if we're already reconnecting
+        if (event.code !== 1000 && connectionStatus !== "connecting") {
+          // This was an abnormal closure, attempt to reconnect
+          setConnectionStatus("disconnected");
+          attemptReconnect();
+        } else if (event.code === 1000) {
+          // Normal closure, reset game state
+          setConnectionStatus("disconnected");
+          setGameState(null);
+          setIsJoining(false);
+        }
+      };
+      return ws;
+    },
+    [attemptReconnect, connectionStatus]
+  );
+
+  // Modify the startWebSocket function usage to apply the onclose handler
+  const getWebSocket = useCallback(
+    (name: string) => {
+      const ws = startWebSocket(name);
+      if (ws) {
+        return enhanceWebSocketWithReconnect(ws);
+      }
+      return null;
+    },
+    [startWebSocket, enhanceWebSocketWithReconnect]
   );
 
   useEffect(() => {
@@ -127,16 +239,34 @@ export function Game(props: { gameId: string }) {
     if (nameFromUrl && idFromUrl === playerId) {
       // User is returning with playerId in URL, auto-connect
       setIsJoining(true);
-      wsRef.current = startWebSocket(decodeURIComponent(nameFromUrl));
+      const ws = startWebSocket(decodeURIComponent(nameFromUrl));
+      if (ws) {
+        wsRef.current = ws;
 
-      // After connection is established, send join message
-      if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
-        wsRef.current.onopen = () => {
-          // Send a test connection message first to verify the requiredWords
+        // Save the original onopen handler
+        const originalOnOpen = ws.onopen;
+
+        // Send join message after connection is established
+        ws.onopen = (event: Event) => {
+          // First call the original handler to ensure connection status is updated
+          if (originalOnOpen && typeof originalOnOpen === "function") {
+            try {
+              (originalOnOpen as (this: WebSocket, ev: Event) => void).call(
+                ws,
+                event
+              );
+            } catch (error) {
+              console.error("Error calling original onopen handler:", error);
+              // Make sure we still update the connection status
+              setConnectionStatus("connected");
+            }
+          }
+
+          // First send test connection to verify game state
           const testMessage: WsMessage = { type: "test-connection" };
           wsRef.current?.send(JSON.stringify(testMessage));
 
-          // Then send join message
+          // Then send join message after a short delay
           setTimeout(() => {
             const message: WsMessage = {
               type: "join",
@@ -145,14 +275,33 @@ export function Game(props: { gameId: string }) {
               playerId: playerId,
             };
             console.log("Sending join message:", message);
-            wsRef.current?.send(JSON.stringify(message));
+            ws.send(JSON.stringify(message));
           }, 500);
         };
+      } else {
+        setIsJoining(false);
       }
 
-      return () => wsRef.current?.close();
+      return () => {
+        if (wsRef.current) {
+          wsRef.current.close(1000); // Normal closure
+        }
+      };
     }
   }, [props.gameId, startWebSocket, searchParams, playerId]);
+
+  // Clean up the reconnect timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close(1000); // 1000 = normal closure
+      }
+    };
+  }, []);
 
   const handleJoinGame = (name: string) => {
     if (!name.trim() || isJoining) return;
@@ -160,7 +309,7 @@ export function Game(props: { gameId: string }) {
     setIsJoining(true);
 
     // Start WebSocket connection with the entered name
-    const ws = startWebSocket(name.trim());
+    const ws = getWebSocket(name.trim());
     if (!ws) {
       setIsJoining(false);
       return;
@@ -168,8 +317,25 @@ export function Game(props: { gameId: string }) {
 
     wsRef.current = ws;
 
+    // Save the original onopen handler
+    const originalOnOpen = ws.onopen;
+
     // Send join message after connection is established
-    ws.onopen = () => {
+    ws.onopen = (event: Event) => {
+      // First call the original handler to ensure connection status is updated
+      if (originalOnOpen && typeof originalOnOpen === "function") {
+        try {
+          (originalOnOpen as (this: WebSocket, ev: Event) => void).call(
+            ws,
+            event
+          );
+        } catch (error) {
+          console.error("Error calling original onopen handler:", error);
+          // Make sure we still update the connection status
+          setConnectionStatus("connected");
+        }
+      }
+
       // First send test connection to verify game state
       const testMessage: WsMessage = { type: "test-connection" };
       wsRef.current?.send(JSON.stringify(testMessage));
@@ -282,6 +448,21 @@ export function Game(props: { gameId: string }) {
       <div className="space-y-4">
         <GameHeader onNewGame={handleNewGame} onShareGame={handleShareGame} />
 
+        {/* Connection status indicator */}
+        {connectionStatus !== "connected" && gameState && (
+          <div
+            className={`text-center py-1 px-3 text-sm rounded-md ${
+              connectionStatus === "connecting"
+                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300 animate-pulse"
+                : "bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+            }`}
+          >
+            {connectionStatus === "connecting"
+              ? "Reconnecting to game..."
+              : "Disconnected - trying to reconnect..."}
+          </div>
+        )}
+
         {gameState && renderGamePhase()}
       </div>
     </div>
@@ -299,6 +480,7 @@ export function Game(props: { gameId: string }) {
             playerId={playerId}
             adminId={gameState.startedById}
             isAdmin={isAdmin || false}
+            connectedPlayers={gameState.connectedPlayers}
             onStartGame={handleStartGame}
           />
         );

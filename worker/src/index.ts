@@ -134,10 +134,17 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 					if (!this.gameState.connectedPlayers.includes(parsedMsg.playerId)) {
 						this.gameState.connectedPlayers.push(parsedMsg.playerId);
 						await this.saveGameState();
+
+						// Broadcast the updated state to all connected players
+						this.broadcast({ type: 'get-game-state-response', gameState: this.gameState });
 					}
 
+					// Send personal confirmation message to the reconnected player
 					ws.send(JSON.stringify({ type: 'message', data: 'Reconnected to game!' }));
 					ws.send(JSON.stringify({ type: 'get-game-state-response', gameState: this.gameState }));
+
+					// Set the player ID as attachment for message handling
+					ws.serializeAttachment({ id: parsedMsg.playerId });
 					return;
 				}
 
