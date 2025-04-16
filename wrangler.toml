@@ -9,6 +9,9 @@ compatibility_date = "2025-04-08"
 minify = true
 
 
+# Use the new Workers + Assets to host the static frontend files
+assets = { directory = ".open-next/assets", binding = "ASSETS" }
+
 [[durable_objects.bindings]]
 name = "CHEESE_PANTS_2"
 class_name = "CheesePants2"
@@ -18,5 +21,11 @@ script_name = "cheese-pants-worker"
 binding = "RPC_SERVICE"
 service = "cheese-pants-worker"
 entrypoint = "CheesePants2RPC"
+
+
+# wrangler.toml (wrangler v3.88.0^)
+[observability.logs]
+enabled = true
+
 
 
