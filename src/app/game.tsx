@@ -172,7 +172,13 @@ export function Game(props: { gameId: string }) {
 
     // Update previous turn state
     setWasCurrentPlayer(isPlayerTurn);
-  }, [gameState, isCurrentPlayer, wasCurrentPlayer, sendTurnNotification]);
+  }, [
+    gameState,
+    isCurrentPlayer,
+    wasCurrentPlayer,
+    notificationsEnabled,
+    sendTurnNotification,
+  ]);
 
   // Add an effect to check notification permissions on load
   useEffect(() => {
