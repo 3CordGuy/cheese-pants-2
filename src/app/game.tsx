@@ -118,7 +118,7 @@ export function Game(props: { gameId: string }) {
     }
   }, [notificationsEnabled]);
 
-  // Add this function to send a notification
+  // Update the sendTurnNotification function
   const sendTurnNotification = useCallback(() => {
     if (!notificationsEnabled) {
       console.log("Notifications not enabled");
@@ -133,13 +133,30 @@ export function Game(props: { gameId: string }) {
     console.log("Sending turn notification");
 
     try {
+      // Construct the full game URL with all necessary parameters
+      const gameUrl = `${window.location.origin}/game/${
+        props.gameId
+      }?playerName=${encodeURIComponent(
+        playerName || ""
+      )}&playerId=${playerId}&requiredWords=${encodeURIComponent(
+        searchParams.get("requiredWords") || ""
+      )}&turnTimeLimit=${searchParams.get("turnTimeLimit") || "0"}`;
+
       const notification = new Notification("Cheese Pants", {
         body: "It's your turn!",
         icon: "/favicon.ico",
+        tag: `cheese-pants-turn-${props.gameId}`, // Using tag to replace previous notifications
+        data: { url: gameUrl }, // Store URL in notification data
       });
 
       notification.onclick = () => {
-        window.focus();
+        // Use the URL from notification data for navigation
+        if (notification.data?.url) {
+          window.open(notification.data.url, "_blank");
+          window.focus();
+        } else {
+          window.focus(); // Fallback to just focusing the window
+        }
         notification.close();
       };
 
@@ -148,7 +165,7 @@ export function Game(props: { gameId: string }) {
     } catch (error) {
       console.error("Error sending notification:", error);
     }
-  }, [notificationsEnabled]);
+  }, [notificationsEnabled, props.gameId, playerId, playerName, searchParams]);
 
   // Move the isCurrentPlayer definition here, before it's used in effects
   const isCurrentPlayer = gameState?.players.find(
@@ -626,6 +643,26 @@ export function Game(props: { gameId: string }) {
     gameState,
     updateUrlWithTimeLimit,
   ]);
+
+  // Add these to your Game component
+  useEffect(() => {
+    // Send ping messages every 30 seconds to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log("Sending ping to keep connection alive");
+        const pingMessage: WsMessage = { type: "test-connection" };
+        wsRef.current.send(JSON.stringify(pingMessage));
+      } else if (connectionStatus !== "connected" && playerId && playerName) {
+        // If connection is lost, try to reconnect
+        console.log("Connection lost, attempting to reconnect");
+        startWebSocket(playerName);
+      }
+    }, 30000); // 30 seconds
+
+    return () => {
+      clearInterval(pingInterval);
+    };
+  }, [connectionStatus, playerId, playerName, startWebSocket]);
 
   // Show loader when joining
   if (isJoining && !gameState) {

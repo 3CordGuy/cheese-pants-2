@@ -6,6 +6,7 @@
     "dev": "next dev --turbopack",
     "dev:worker": "cd worker && wrangler dev",
     "dev:rpc": "wrangler dev",
+    "dev:all": "concurrently \"npm:dev\" \"npm:dev:worker\" \"npm:dev:rpc\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

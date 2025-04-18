@@ -192,10 +192,8 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 
 		switch (parsedMsg.type) {
 			case 'test-connection':
-				// Check for timeout and update game state
-				await this.checkAndProcessTurnTimeout();
-
-				// Send back the current game state
+				// Just respond with the current game state and a pong message
+				ws.send(JSON.stringify({ type: 'pong' }));
 				ws.send(JSON.stringify({ type: 'get-game-state-response', gameState: this.gameState }));
 				break;
 
