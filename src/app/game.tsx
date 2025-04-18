@@ -29,6 +29,46 @@ function messageReducer(state: MessageState, action: MessageAction) {
 const RECONNECT_DELAY = 2000; // 2 seconds
 const MAX_RECONNECT_ATTEMPTS = 5;
 
+// Add a localStorage cleanup helper function at the top of the file
+function cleanupExpiredGameData() {
+  if (typeof window === "undefined") return;
+
+  // Only run cleanup occasionally (1 in 10 chance)
+  if (Math.random() > 0.1) return;
+
+  try {
+    // Get all localStorage keys
+    const keys = Object.keys(localStorage);
+    const now = new Date();
+
+    // Find all cheesePantsGame_ keys
+    const gameKeys = keys.filter((key) => key.startsWith("cheesePantsGame_"));
+
+    gameKeys.forEach((key) => {
+      try {
+        const data = JSON.parse(localStorage.getItem(key) || "{}");
+
+        // Check if this entry is older than 30 days
+        if (data.lastActive || data.joinedAt) {
+          const lastActiveDate = new Date(data.lastActive || data.joinedAt);
+          const ageInDays =
+            (now.getTime() - lastActiveDate.getTime()) / (1000 * 60 * 60 * 24);
+
+          // Remove entries older than 30 days
+          if (ageInDays > 30) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // If we can't parse the data, it might be corrupted, remove it
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (error) {
+    console.error("Error cleaning up expired game data", error);
+  }
+}
+
 export function Game(props: { gameId: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -36,19 +76,55 @@ export function Game(props: { gameId: string }) {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const joinTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const msgTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<
     "connected" | "disconnected" | "connecting"
   >("disconnected");
 
+  // Add loading state to prevent UI flickering
+  const [uiState, setUiState] = useState<
+    "initializing" | "joining" | "ready" | "error"
+  >("initializing");
+
+  // Prevent multiple join attempts
+  const joinAttemptedRef = useRef(false);
+
   const [playerId] = useState(() => {
-    // Try to get playerId from URL params, otherwise generate a new one
+    // Try to get playerId from URL params, localStorage, or generate a new one
     const idFromUrl = searchParams.get("playerId");
-    return idFromUrl || nanoid();
+    if (idFromUrl) return idFromUrl;
+
+    // Check if we have a stored playerId for this game
+    if (typeof window !== "undefined") {
+      const storedData = localStorage.getItem(
+        `cheesePantsGame_${props.gameId}`
+      );
+      if (storedData) {
+        const parsedData = JSON.parse(storedData);
+        return parsedData.playerId;
+      }
+    }
+
+    return nanoid();
   });
 
   const [playerName] = useState(() => {
     const nameFromUrl = searchParams.get("playerName");
-    return nameFromUrl ? decodeURIComponent(nameFromUrl) : "";
+    if (nameFromUrl) return decodeURIComponent(nameFromUrl);
+
+    // Check if we have a stored playerName for this game
+    if (typeof window !== "undefined") {
+      const storedData = localStorage.getItem(
+        `cheesePantsGame_${props.gameId}`
+      );
+      if (storedData) {
+        const parsedData = JSON.parse(storedData);
+        return parsedData.playerName;
+      }
+    }
+
+    return "";
   });
 
   const requiredWords = searchParams.get("requiredWords")
@@ -306,6 +382,7 @@ export function Game(props: { gameId: string }) {
     // Clear any existing timeout
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
 
     reconnectTimeoutRef.current = setTimeout(() => {
@@ -350,7 +427,18 @@ export function Game(props: { gameId: string }) {
           wsRef.current = ws;
         }
       }
+
+      // Clear the reference since the timeout has executed
+      reconnectTimeoutRef.current = null;
     }, RECONNECT_DELAY);
+
+    // Return a cleanup function in case this callback is used in an effect
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
   }, [props.gameId, searchParams, playerId, startWebSocket]);
 
   // Update the WebSocket onclose handler
@@ -363,6 +451,13 @@ export function Game(props: { gameId: string }) {
         if (event.code !== 1000 && connectionStatus !== "connecting") {
           // This was an abnormal closure, attempt to reconnect
           setConnectionStatus("disconnected");
+
+          // Clear any existing reconnect timeout
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
+
           attemptReconnect();
         } else if (event.code === 1000) {
           // Normal closure, reset game state
@@ -396,8 +491,182 @@ export function Game(props: { gameId: string }) {
     if (nameFromUrl && idFromUrl === playerId) {
       // User is returning with playerId in URL, auto-connect
       setIsJoining(true);
-      const ws = startWebSocket(decodeURIComponent(nameFromUrl));
-      if (ws) {
+      setUiState("joining");
+
+      const connectTimeout = setTimeout(() => {
+        const ws = startWebSocket(decodeURIComponent(nameFromUrl));
+        if (ws) {
+          wsRef.current = ws;
+
+          // Also store in localStorage for future visits
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              `cheesePantsGame_${props.gameId}`,
+              JSON.stringify({
+                playerId,
+                playerName: decodeURIComponent(nameFromUrl),
+                gameId: props.gameId,
+                joinedAt: new Date().toISOString(),
+              })
+            );
+          }
+
+          // Save the original onopen handler
+          const originalOnOpen = ws.onopen;
+
+          // Send join message after connection is established
+          ws.onopen = (event: Event) => {
+            // First call the original handler to ensure connection status is updated
+            if (originalOnOpen && typeof originalOnOpen === "function") {
+              try {
+                (originalOnOpen as (this: WebSocket, ev: Event) => void).call(
+                  ws,
+                  event
+                );
+              } catch (error) {
+                console.error("Error calling original onopen handler:", error);
+                // Make sure we still update the connection status
+                setConnectionStatus("connected");
+              }
+            }
+
+            // First send test connection to verify game state
+            const testMessage: WsMessage = { type: "test-connection" };
+            wsRef.current?.send(JSON.stringify(testMessage));
+
+            // Then send join message after a short delay
+            const joinMsgTimeout = setTimeout(() => {
+              const message: WsMessage = {
+                type: "join",
+                gameId: props.gameId,
+                playerName: decodeURIComponent(nameFromUrl),
+                playerId: playerId,
+              };
+              console.log("Sending join message:", message);
+              ws.send(JSON.stringify(message));
+            }, 100);
+
+            // Store the timeout in a ref so we can clear it if needed
+            const prevTimeout = reconnectTimeoutRef.current;
+            if (prevTimeout) clearTimeout(prevTimeout);
+            reconnectTimeoutRef.current = joinMsgTimeout;
+          };
+        } else {
+          setIsJoining(false);
+          setUiState("error");
+        }
+      }, 50);
+
+      return () => {
+        // Clear the connect timeout if unmounting
+        clearTimeout(connectTimeout);
+
+        // Clear any pending reconnection timeout
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+
+        // Close WebSocket if it exists
+        if (wsRef.current) {
+          wsRef.current.close(1000); // Normal closure
+        }
+      };
+    }
+  }, [props.gameId, startWebSocket, searchParams, playerId]);
+
+  // Clean up the reconnect timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close(1000); // 1000 = normal closure
+      }
+    };
+  }, []);
+
+  // Add this effect to the Game component
+  useEffect(() => {
+    // Create a reference to hold any focus-related timeouts
+    const focusTimeoutRef = { current: null as NodeJS.Timeout | null };
+
+    const handleWindowFocus = () => {
+      // When window is focused, send a test-connection message to check timer and get fresh state
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log("Window focused, sending connection test to check timer");
+        const message: WsMessage = { type: "test-connection" };
+        wsRef.current.send(JSON.stringify(message));
+      }
+    };
+
+    // Add focus event listener
+    window.addEventListener("focus", handleWindowFocus);
+
+    // Clean up
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Add useEffect for initial UI state determination after data loads
+  useEffect(() => {
+    // If we already have game state or are joining, then UI is ready
+    if (gameState || isJoining) {
+      setUiState("ready");
+      return;
+    }
+
+    // Short timeout to allow everything to initialize before showing the join screen
+    // This prevents flickering if we're going to auto-join
+    const timer = setTimeout(() => {
+      setUiState("ready");
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [gameState, isJoining]);
+
+  // Define handleJoinGame with useCallback to prevent dependency issues
+  const handleJoinGame = useCallback(
+    (name: string) => {
+      if (!name.trim() || isJoining) return;
+
+      // Set joining state immediately to prevent UI flickering
+      setIsJoining(true);
+      setUiState("joining");
+
+      // Store player data in localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          `cheesePantsGame_${props.gameId}`,
+          JSON.stringify({
+            playerId,
+            playerName: name.trim(),
+            gameId: props.gameId,
+            joinedAt: new Date().toISOString(),
+          })
+        );
+      }
+
+      // Clear any existing timeout
+      if (joinTimeoutRef.current) {
+        clearTimeout(joinTimeoutRef.current);
+      }
+
+      // Slightly delay WebSocket connection to allow UI to update first
+      joinTimeoutRef.current = setTimeout(() => {
+        // Start WebSocket connection with the entered name
+        const ws = getWebSocket(name.trim());
+        if (!ws) {
+          setIsJoining(false);
+          setUiState("error");
+          return;
+        }
+
         wsRef.current = ws;
 
         // Save the original onopen handler
@@ -423,119 +692,97 @@ export function Game(props: { gameId: string }) {
           const testMessage: WsMessage = { type: "test-connection" };
           wsRef.current?.send(JSON.stringify(testMessage));
 
+          // Clear any existing message timeout
+          if (msgTimeoutRef.current) {
+            clearTimeout(msgTimeoutRef.current);
+          }
+
           // Then send join message after a short delay
-          setTimeout(() => {
+          msgTimeoutRef.current = setTimeout(() => {
             const message: WsMessage = {
               type: "join",
               gameId: props.gameId,
-              playerName: decodeURIComponent(nameFromUrl),
+              playerName: name.trim(),
               playerId: playerId,
             };
             console.log("Sending join message:", message);
             ws.send(JSON.stringify(message));
-          }, 500);
+
+            // Update URL with player info for refreshes
+            // Do this silently without causing a navigation/reload
+            const url = new URL(window.location.href);
+            url.searchParams.set("playerName", name.trim());
+            url.searchParams.set("playerId", playerId);
+            window.history.replaceState({}, "", url.toString());
+          }, 100);
         };
-      } else {
-        setIsJoining(false);
-      }
+      }, 50);
+    },
+    [
+      props.gameId,
+      playerId,
+      isJoining,
+      getWebSocket,
+      setConnectionStatus,
+      setIsJoining,
+      wsRef,
+    ]
+  );
 
-      return () => {
-        if (wsRef.current) {
-          wsRef.current.close(1000); // Normal closure
-        }
-      };
-    }
-  }, [props.gameId, startWebSocket, searchParams, playerId]);
-
-  // Clean up the reconnect timeout on component unmount
+  // Add cleanup for any timeouts when component unmounts
   useEffect(() => {
     return () => {
-      if (reconnectTimeoutRef.current) {
+      // Clean up all timeouts on unmount
+      if (reconnectTimeoutRef.current)
         clearTimeout(reconnectTimeoutRef.current);
-      }
-
-      if (wsRef.current) {
-        wsRef.current.close(1000); // 1000 = normal closure
-      }
+      if (joinTimeoutRef.current) clearTimeout(joinTimeoutRef.current);
+      if (msgTimeoutRef.current) clearTimeout(msgTimeoutRef.current);
     };
   }, []);
 
-  // Add this effect to the Game component
+  // Replace the auto-join useEffect with an improved version
   useEffect(() => {
-    const handleWindowFocus = () => {
-      // When window is focused, send a test-connection message to check timer and get fresh state
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        console.log("Window focused, sending connection test to check timer");
-        const message: WsMessage = { type: "test-connection" };
-        wsRef.current.send(JSON.stringify(message));
-      }
-    };
-
-    // Add focus event listener
-    window.addEventListener("focus", handleWindowFocus);
-
-    // Clean up
-    return () => {
-      window.removeEventListener("focus", handleWindowFocus);
-    };
-  }, []);
-
-  const handleJoinGame = (name: string) => {
-    if (!name.trim() || isJoining) return;
-
-    setIsJoining(true);
-
-    // Start WebSocket connection with the entered name
-    const ws = getWebSocket(name.trim());
-    if (!ws) {
-      setIsJoining(false);
+    // Only run once and only if not already joining
+    if (joinAttemptedRef.current || isJoining || searchParams.get("playerId"))
       return;
-    }
 
-    wsRef.current = ws;
+    // Mark as attempted so we don't try again
+    joinAttemptedRef.current = true;
 
-    // Save the original onopen handler
-    const originalOnOpen = ws.onopen;
+    // Keep UI in initializing state until we decide whether to auto-join
+    setUiState("initializing");
 
-    // Send join message after connection is established
-    ws.onopen = (event: Event) => {
-      // First call the original handler to ensure connection status is updated
-      if (originalOnOpen && typeof originalOnOpen === "function") {
+    // Check if we have stored data for this game
+    if (typeof window !== "undefined") {
+      const storedData = localStorage.getItem(
+        `cheesePantsGame_${props.gameId}`
+      );
+      if (storedData) {
         try {
-          (originalOnOpen as (this: WebSocket, ev: Event) => void).call(
-            ws,
-            event
-          );
+          const parsedData = JSON.parse(storedData);
+          // Only auto-join if we have both playerId and playerName matching current state
+          if (parsedData.playerId === playerId && parsedData.playerName) {
+            console.log("Auto-joining from localStorage data");
+
+            // Small delay to ensure all states are properly initialized
+            const autoJoinTimeout = setTimeout(() => {
+              handleJoinGame(parsedData.playerName);
+            }, 50);
+
+            // Clean up timeout if effect unmounts
+            return () => {
+              clearTimeout(autoJoinTimeout);
+            };
+          }
         } catch (error) {
-          console.error("Error calling original onopen handler:", error);
-          // Make sure we still update the connection status
-          setConnectionStatus("connected");
+          console.error("Error parsing stored game data:", error);
         }
       }
+    }
 
-      // First send test connection to verify game state
-      const testMessage: WsMessage = { type: "test-connection" };
-      wsRef.current?.send(JSON.stringify(testMessage));
-
-      // Then send join message after a short delay
-      setTimeout(() => {
-        const message: WsMessage = {
-          type: "join",
-          gameId: props.gameId,
-          playerName: name.trim(),
-          playerId: playerId,
-        };
-        console.log("Sending join message:", message);
-        ws.send(JSON.stringify(message));
-
-        // Update URL with player info for refreshes
-        const url = new URL(window.location.href);
-        url.searchParams.set("playerName", name.trim());
-        url.searchParams.set("playerId", playerId);
-        window.history.replaceState({}, "", url.toString());
-      }, 500);
-    };
-  };
+    // If we're not auto-joining, mark UI as ready to show join form
+    setUiState("ready");
+  }, [props.gameId, isJoining, playerId, searchParams, handleJoinGame]);
 
   const handleAddWord = (word: string) => {
     if (!word.trim()) return;
@@ -576,7 +823,70 @@ export function Game(props: { gameId: string }) {
     wsRef.current?.send(JSON.stringify(message));
   };
 
+  // Function to clear localStorage for a specific game
+  const clearGameFromStorage = useCallback(() => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`cheesePantsGame_${props.gameId}`);
+    }
+  }, [props.gameId]);
+
+  // Add handling for game completion to clear storage
+  useEffect(() => {
+    // If game is complete, we can optionally clear the localStorage
+    if (gameState?.phase === "complete") {
+      // For completed games, we could either clear immediately or after a delay
+      // Keeping it for now, but marking it as completed
+      if (typeof window !== "undefined") {
+        const existingData = localStorage.getItem(
+          `cheesePantsGame_${props.gameId}`
+        );
+        if (existingData) {
+          const parsedData = JSON.parse(existingData);
+          localStorage.setItem(
+            `cheesePantsGame_${props.gameId}`,
+            JSON.stringify({
+              ...parsedData,
+              gamePhase: "complete",
+              completedAt: new Date().toISOString(),
+            })
+          );
+        }
+      }
+    }
+  }, [gameState?.phase, props.gameId]);
+
+  // Handle game quit - should clean up localStorage
+  useEffect(() => {
+    if (wsRef.current) {
+      // Add event handler for close to clean up localStorage
+      const originalOnClose = wsRef.current.onclose;
+      wsRef.current.onclose = (event) => {
+        // Call original handler first
+        if (originalOnClose && typeof originalOnClose === "function") {
+          try {
+            (originalOnClose as (this: WebSocket, ev: CloseEvent) => void).call(
+              wsRef.current as WebSocket,
+              event
+            );
+          } catch (error) {
+            console.error("Error calling original onclose handler:", error);
+          }
+        }
+
+        // If this was a clean disconnect (code 1000) on a completed game, clear storage
+        if (event.code === 1000 && gameState?.phase === "complete") {
+          clearGameFromStorage();
+        }
+      };
+    }
+
+    // No cleanup function needed as we're just adding an event handler
+    // to an existing WebSocket which will be cleaned up elsewhere
+  }, [wsRef, gameState, clearGameFromStorage]);
+
   const handleNewGame = () => {
+    // Clear current game data when starting a new game
+    clearGameFromStorage();
     window.location.href = "/";
   };
 
@@ -646,6 +956,9 @@ export function Game(props: { gameId: string }) {
 
   // Add these to your Game component
   useEffect(() => {
+    // Keep track of any additional timeouts created in this effect
+    const timeoutsToCleanup: NodeJS.Timeout[] = [];
+
     // Send ping messages every 30 seconds to keep connection alive
     const pingInterval = setInterval(() => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -655,17 +968,64 @@ export function Game(props: { gameId: string }) {
       } else if (connectionStatus !== "connected" && playerId && playerName) {
         // If connection is lost, try to reconnect
         console.log("Connection lost, attempting to reconnect");
+        // Call startWebSocket but don't try to use its return value since it doesn't return anything
         startWebSocket(playerName);
       }
     }, 30000); // 30 seconds
 
     return () => {
+      // Clean up the ping interval
       clearInterval(pingInterval);
+
+      // Clean up any additional timeouts
+      timeoutsToCleanup.forEach((timeout) => clearTimeout(timeout));
+
+      // Also clear the reconnect timeout as a precaution
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
   }, [connectionStatus, playerId, playerName, startWebSocket]);
 
-  // Show loader when joining
-  if (isJoining && !gameState) {
+  // Add a useEffect to update localStorage when game state changes
+  useEffect(() => {
+    // Don't update until we have valid game state
+    if (!gameState || !playerId || !playerName) return;
+
+    // Only update if the player is in the game
+    const isPlayerInGame = gameState.players.some((p) => p.id === playerId);
+    if (!isPlayerInGame) return;
+
+    // Update localStorage with latest game data
+    if (typeof window !== "undefined") {
+      const existingData = localStorage.getItem(
+        `cheesePantsGame_${props.gameId}`
+      );
+      const parsedData = existingData ? JSON.parse(existingData) : {};
+
+      localStorage.setItem(
+        `cheesePantsGame_${props.gameId}`,
+        JSON.stringify({
+          ...parsedData,
+          playerId,
+          playerName,
+          gameId: props.gameId,
+          lastActive: new Date().toISOString(),
+          // You could also store additional info like current game phase
+          gamePhase: gameState.phase,
+        })
+      );
+    }
+  }, [gameState, playerId, playerName, props.gameId]);
+
+  // Run cleanup on component mount
+  useEffect(() => {
+    cleanupExpiredGameData();
+  }, []);
+
+  // Show loader when initializing or joining
+  if ((uiState === "initializing" || uiState === "joining") && !gameState) {
     return (
       <div className="flex flex-col min-h-screen">
         <div className="flex-grow flex items-center justify-center">
@@ -676,8 +1036,8 @@ export function Game(props: { gameId: string }) {
     );
   }
 
-  // Show join form if not in game and not joining
-  if (!isPlayerInGame && !isJoining) {
+  // Show join form if not in game and UI is ready
+  if (!isPlayerInGame && uiState === "ready") {
     return (
       <div className="flex flex-col min-h-screen">
         <div className="flex-grow p-4">
