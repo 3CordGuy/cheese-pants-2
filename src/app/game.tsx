@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
-import type { GameState, WsMessage } from "../../worker/src/index";
+import type { GameState, WsMessage, Player } from "../../worker/src/index";
 import { GameLobby } from "./components/GameLobby";
 import { GamePlaying } from "./components/GamePlaying";
 import { GameComplete } from "./components/GameComplete";
@@ -292,6 +292,13 @@ export function Game(props: { gameId: string }) {
   // Check if player is in the game
   const isPlayerInGame = gameState?.players.some((p) => p.id === playerId);
 
+  // Debug log to check connected players
+  useEffect(() => {
+    if (gameState) {
+      console.log("Connected players:", gameState.connectedPlayers);
+    }
+  }, [gameState?.connectedPlayers]);
+
   // Define startWebSocket first without the attempt reconnect dependency
   const startWebSocket = useCallback(
     (name: string) => {
@@ -327,9 +334,30 @@ export function Game(props: { gameId: string }) {
         console.log("WebSocket connected");
         setConnectionStatus("connected");
         reconnectAttemptsRef.current = 0; // Reset reconnect attempts on successful connection
+
+        // First send a ping to ensure connection is active
+        const pingMessage: WsMessage = { type: "test-connection" };
+        ws.send(JSON.stringify(pingMessage));
+
+        // Then request the game state
         dispatchMessage({ type: "out", message: "get-game-state" });
         const message: WsMessage = { type: "get-game-state" };
         ws.send(JSON.stringify(message));
+
+        // Also send join message to ensure we're tracked as connected
+        if (name) {
+          const joinMessage: WsMessage = {
+            type: "join",
+            gameId: props.gameId,
+            playerName: name,
+            playerId: playerId,
+          };
+          console.log(
+            "Sending reconnect message on fresh connection:",
+            joinMessage
+          );
+          setTimeout(() => ws.send(JSON.stringify(joinMessage)), 500);
+        }
       };
 
       ws.onmessage = (message) => {
@@ -344,6 +372,22 @@ export function Game(props: { gameId: string }) {
             break;
           case "get-game-state-response":
             console.log("Received game state:", messageData.gameState);
+
+            // Add detailed logging for connectedPlayers
+            console.log("ConnectedPlayers in received gameState:", {
+              connectedPlayers: messageData.gameState.connectedPlayers,
+              count: messageData.gameState.connectedPlayers?.length || 0,
+              playerIds: messageData.gameState.players.map((p: Player) => p.id),
+            });
+
+            // Ensure connectedPlayers is always an array (handle null/undefined)
+            if (!messageData.gameState.connectedPlayers) {
+              console.warn(
+                "connectedPlayers is missing in gameState, initializing as empty array"
+              );
+              messageData.gameState.connectedPlayers = [];
+            }
+
             setGameState(messageData.gameState);
             setIsJoining(false);
             break;
@@ -815,6 +859,26 @@ export function Game(props: { gameId: string }) {
     wsRef.current?.send(JSON.stringify(message));
   };
 
+  // Add a function to handle removing a player from the game (admin only)
+  const handleRemovePlayer = (playerIdToRemove: string) => {
+    // Only the admin can remove players
+    if (!isAdmin) return;
+
+    // Confirm before removing
+    if (
+      !confirm(`Are you sure you want to remove this player from the game?`)
+    ) {
+      return;
+    }
+
+    const message: WsMessage = {
+      type: "remove-player",
+      playerIdToRemove,
+      playerId,
+    };
+    wsRef.current?.send(JSON.stringify(message));
+  };
+
   const handleStartGame = () => {
     const message: WsMessage = {
       type: "start-game",
@@ -959,7 +1023,7 @@ export function Game(props: { gameId: string }) {
     // Keep track of any additional timeouts created in this effect
     const timeoutsToCleanup: NodeJS.Timeout[] = [];
 
-    // Send ping messages every 30 seconds to keep connection alive
+    // Send ping messages every 20 seconds to keep connection alive
     const pingInterval = setInterval(() => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         console.log("Sending ping to keep connection alive");
@@ -971,7 +1035,7 @@ export function Game(props: { gameId: string }) {
         // Call startWebSocket but don't try to use its return value since it doesn't return anything
         startWebSocket(playerName);
       }
-    }, 30000); // 30 seconds
+    }, 20000); // 20 seconds
 
     return () => {
       // Clean up the ping interval
@@ -1099,8 +1163,9 @@ export function Game(props: { gameId: string }) {
             playerId={playerId}
             adminId={gameState.startedById}
             isAdmin={isAdmin || false}
-            connectedPlayers={gameState.connectedPlayers}
+            connectedPlayers={gameState.connectedPlayers || []}
             onStartGame={handleStartGame}
+            onRemovePlayer={handleRemovePlayer}
           />
         );
 
@@ -1115,6 +1180,7 @@ export function Game(props: { gameId: string }) {
             onDeleteWord={handleDeleteWord}
             onChangeTurn={handleChangeTurn}
             onUpdateTurnTimeLimit={handleUpdateTurnTimeLimit}
+            onRemovePlayer={handleRemovePlayer}
           />
         );
 

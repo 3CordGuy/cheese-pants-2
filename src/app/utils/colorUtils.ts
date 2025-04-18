@@ -1,24 +1,25 @@
-// Collection of color combinations for avatar backgrounds
-const COLOR_PAIRS = [
-  { from: "indigo-500", to: "purple-600" },
-  { from: "blue-500", to: "indigo-600" },
-  { from: "cyan-500", to: "blue-600" },
-  { from: "emerald-500", to: "teal-600" },
-  { from: "green-500", to: "emerald-600" },
-  { from: "orange-500", to: "red-600" },
-  { from: "amber-500", to: "orange-600" },
-  { from: "rose-500", to: "pink-600" },
-  { from: "fuchsia-500", to: "purple-600" },
-  { from: "violet-500", to: "indigo-600" },
+// Collection of color combinations for avatar backgrounds with improved contrast
+// Define classes that will be directly used without string interpolation so Tailwind doesn't purge them
+const AVATAR_CLASSES = [
+  "bg-gradient-to-br from-indigo-600 to-purple-700 text-white",
+  "bg-gradient-to-br from-blue-600 to-indigo-700 text-white",
+  "bg-gradient-to-br from-cyan-600 to-blue-700 text-white",
+  "bg-gradient-to-br from-emerald-600 to-teal-700 text-white",
+  "bg-gradient-to-br from-green-600 to-emerald-700 text-white",
+  "bg-gradient-to-br from-orange-600 to-red-700 text-white",
+  "bg-gradient-to-br from-amber-600 to-orange-700 text-white",
+  "bg-gradient-to-br from-rose-600 to-pink-700 text-white",
+  "bg-gradient-to-br from-fuchsia-600 to-purple-700 text-white",
+  "bg-gradient-to-br from-violet-600 to-indigo-700 text-white",
 ];
 
 /**
- * Generates a consistent color pair based on a string input (name or ID)
+ * Generates a consistent avatar class based on a string input
  *
  * @param input - The string to generate a color from (player name or ID)
- * @returns An object with from and to color classes for gradients
+ * @returns A string with Tailwind CSS classes for the avatar
  */
-export const getPlayerColor = (input: string): { from: string; to: string } => {
+export const getPlayerAvatarClass = (input: string): string => {
   // Create a simple hash of the input string
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
@@ -29,19 +30,33 @@ export const getPlayerColor = (input: string): { from: string; to: string } => {
   // Get a positive index based on the hash
   const positiveHash = Math.abs(hash);
 
-  // Use modulo to get an index within our color pairs array
-  const colorIndex = positiveHash % COLOR_PAIRS.length;
+  // Use modulo to get an index within our avatar classes array
+  const colorIndex = positiveHash % AVATAR_CLASSES.length;
 
-  return COLOR_PAIRS[colorIndex];
+  return AVATAR_CLASSES[colorIndex];
 };
 
 /**
- * Generates a Tailwind CSS class string for a player avatar background
+ * Determines badge classes based on type for consistent styling
  *
- * @param input - The string to generate a color from (player name or ID)
- * @returns A string of Tailwind CSS classes for the background
+ * @param type - The type of badge (host, current, or offline)
+ * @returns A string with Tailwind classes for badge backgrounds
  */
-export const getPlayerAvatarClass = (input: string): string => {
-  const { from, to } = getPlayerColor(input);
-  return `bg-gradient-to-br from-${from} to-${to}`;
+export const getPlayerBadgeClasses = (
+  _input: string,
+  type: "host" | "current" | "offline"
+): string => {
+  // Base styles that are always applied
+  const baseClasses = "text-xs px-2 py-0.5 rounded-full font-medium";
+
+  // Create badge styles based on type with better contrast
+  if (type === "host") {
+    return `${baseClasses} bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-200`;
+  } else if (type === "current") {
+    return `${baseClasses} bg-green-200 text-green-900 dark:bg-green-800 dark:text-green-200`;
+  } else if (type === "offline") {
+    return `${baseClasses} bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300`;
+  }
+
+  return baseClasses;
 };

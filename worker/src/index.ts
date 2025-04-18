@@ -16,6 +16,7 @@ export type WsMessage =
 	| { type: 'update-turn-time-limit'; newTimeLimit: number; playerId: string }
 	| { type: 'game-complete'; sentence: string[] }
 	| { type: 'test-connection' }
+	| { type: 'remove-player'; playerIdToRemove: string; playerId: string }
 	| { type: 'start-game'; playerId: string };
 
 export type WordInfo = {
@@ -192,7 +193,22 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 
 		switch (parsedMsg.type) {
 			case 'test-connection':
-				// Just respond with the current game state and a pong message
+				// Get player ID from attachment
+				const attachment = ws.deserializeAttachment();
+				if (attachment && attachment.id) {
+					const playerId = attachment.id;
+
+					// Ensure this player is in the connectedPlayers list
+					if (!this.gameState.connectedPlayers.includes(playerId)) {
+						console.log(`Adding player ${playerId} to connectedPlayers on test-connection`);
+						this.gameState.connectedPlayers.push(playerId);
+						await this.saveGameState();
+						// Broadcast updated state to all clients
+						this.broadcast({ type: 'get-game-state-response', gameState: this.gameState });
+					}
+				}
+
+				// Respond with the current game state and a pong message
 				ws.send(JSON.stringify({ type: 'pong' }));
 				ws.send(JSON.stringify({ type: 'get-game-state-response', gameState: this.gameState }));
 				break;
@@ -393,6 +409,84 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 				this.broadcast({
 					type: 'message',
 					data: newTimeLimit > 0 ? `Game host changed turn time limit to ${newTimeLimit} seconds` : 'Game host removed the turn time limit',
+				});
+
+				// Broadcast updated state to all clients
+				this.broadcast({ type: 'get-game-state-response', gameState: this.gameState });
+				break;
+
+			case 'remove-player':
+				// Only allow the admin to remove players
+				if (parsedMsg.playerId !== this.gameState.startedById) {
+					ws.send(JSON.stringify({ type: 'message', data: 'Only the game admin can remove players.' }));
+					break;
+				}
+
+				// Find the player to remove
+				const playerToRemoveIndex = this.gameState.players.findIndex((p) => p.id === parsedMsg.playerIdToRemove);
+				if (playerToRemoveIndex === -1) {
+					ws.send(JSON.stringify({ type: 'message', data: 'Player not found.' }));
+					break;
+				}
+
+				// Get the player details for notification
+				const playerToRemove = this.gameState.players[playerToRemoveIndex];
+				const playerName = playerToRemove.name;
+
+				// Check if player being removed is the current player
+				const isCurrentPlayer = playerToRemove.isCurrentTurn;
+
+				// Remove the player from the players array
+				this.gameState.players.splice(playerToRemoveIndex, 1);
+
+				// If there are no players left, reset the game state
+				if (this.gameState.players.length === 0) {
+					this.gameState.phase = 'lobby';
+					this.gameState.currentPlayerIndex = 0;
+				} else {
+					// If the removed player was the current player, adjust current player index
+					if (isCurrentPlayer) {
+						// Set to first player if index is now out of bounds
+						if (this.gameState.currentPlayerIndex >= this.gameState.players.length) {
+							this.gameState.currentPlayerIndex = 0;
+						}
+						// Update the current player's flag
+						this.gameState.players[this.gameState.currentPlayerIndex].isCurrentTurn = true;
+					} else if (playerToRemoveIndex < this.gameState.currentPlayerIndex) {
+						// Adjust current player index if removed player was before current player
+						this.gameState.currentPlayerIndex--;
+					}
+				}
+
+				// Remove from connected players array
+				const connectedPlayerIndex = this.gameState.connectedPlayers.indexOf(parsedMsg.playerIdToRemove);
+				if (connectedPlayerIndex !== -1) {
+					this.gameState.connectedPlayers.splice(connectedPlayerIndex, 1);
+				}
+
+				// Save the updated game state
+				await this.saveGameState();
+
+				// Notify all clients about the player removal
+				this.broadcast({
+					type: 'message',
+					data: `Admin removed ${playerName} from the game.`,
+				});
+
+				// Send quit message to the removed player's websocket
+				this.ctx.getWebSockets().forEach((clientWs) => {
+					const attachment = clientWs.deserializeAttachment();
+					if (!attachment) return;
+					const { id } = attachment;
+					if (id === parsedMsg.playerIdToRemove) {
+						clientWs.send(
+							JSON.stringify({
+								type: 'message',
+								data: 'You have been removed from the game by the admin.',
+							})
+						);
+						clientWs.send(JSON.stringify({ type: 'quit', gameId: this.gameState.gameId }));
+					}
 				});
 
 				// Broadcast updated state to all clients

@@ -11,6 +11,7 @@ interface GameLobbyProps {
   isAdmin: boolean;
   connectedPlayers: string[];
   onStartGame: () => void;
+  onRemovePlayer: (playerIdToRemove: string) => void;
 }
 
 export const GameLobby = ({
@@ -20,6 +21,7 @@ export const GameLobby = ({
   isAdmin,
   connectedPlayers,
   onStartGame,
+  onRemovePlayer,
 }: GameLobbyProps) => {
   const [copied, setCopied] = useState(false);
 
@@ -152,7 +154,7 @@ export const GameLobby = ({
                         title={isConnected ? "Online" : "Offline"}
                       ></div>
                     </div>
-                    <div className="ml-3">
+                    <div className="ml-3 flex-grow">
                       <div className="flex items-center flex-wrap gap-2">
                         <span className="font-medium">
                           {player.name} {player.id === playerId ? "(You)" : ""}
@@ -169,6 +171,32 @@ export const GameLobby = ({
                         )}
                       </div>
                     </div>
+
+                    {/* Add remove button for admin */}
+                    {isAdmin && player.id !== playerId && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemovePlayer(player.id);
+                        }}
+                        className="ml-auto text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        title="Remove player"
+                        aria-label="Remove player"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="w-5 h-5"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 );
               })}

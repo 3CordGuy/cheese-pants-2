@@ -14,6 +14,7 @@ interface GamePlayingProps {
   onDeleteWord: (index: number) => void;
   onChangeTurn: (playerId: string) => void;
   onUpdateTurnTimeLimit: (newTimeLimit: number) => void;
+  onRemovePlayer: (playerIdToRemove: string) => void;
 }
 
 export const GamePlaying = ({
@@ -25,6 +26,7 @@ export const GamePlaying = ({
   onDeleteWord,
   onChangeTurn,
   onUpdateTurnTimeLimit,
+  onRemovePlayer,
 }: GamePlayingProps) => {
   const [wordInput, setWordInput] = useState("");
   const [remainingTime, setRemainingTime] = useState<number | null>(null);
@@ -33,23 +35,18 @@ export const GamePlaying = ({
     gameState.turnTimeLimit || 0
   );
 
-  // Debug logging to check timer state
+  // Debug: Log connected players when they change
   useEffect(() => {
-    console.log("Timer debug:", {
-      turnTimeLimit: gameState.turnTimeLimit,
-      lastTurnStartTime: gameState.lastTurnStartTime,
-      remainingTime,
+    console.log("GamePlaying connectedPlayers:", {
+      connectedPlayers: gameState.connectedPlayers,
+      count: gameState.connectedPlayers?.length || 0,
     });
-  }, [gameState.turnTimeLimit, gameState.lastTurnStartTime, remainingTime]);
+  }, [gameState.connectedPlayers]);
 
   // Timer update effect
   useEffect(() => {
     // If no time limit or no last turn start time, don't show timer
     if (!gameState.turnTimeLimit || !gameState.lastTurnStartTime) {
-      console.log("Timer conditions not met:", {
-        turnTimeLimit: gameState.turnTimeLimit,
-        lastTurnStartTime: gameState.lastTurnStartTime,
-      });
       setRemainingTime(null);
       setTimerWarning(null);
       return;
@@ -310,8 +307,9 @@ export const GamePlaying = ({
             currentPlayerId={playerId}
             adminId={gameState.startedById}
             isAdmin={isAdmin}
-            connectedPlayers={gameState.connectedPlayers}
+            connectedPlayers={gameState.connectedPlayers || []}
             onChangeTurn={onChangeTurn}
+            onRemovePlayer={onRemovePlayer}
           />
         </div>
       </div>
