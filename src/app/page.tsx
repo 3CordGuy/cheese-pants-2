@@ -191,11 +191,15 @@ export default function Home() {
               onChange={(e) => setTurnTimeLimit(parseInt(e.target.value, 10))}
               className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
             >
-              <option value="0">No time limit</option>
+              <option value="0">No limit</option>
               <option value="30">30 seconds</option>
               <option value="60">1 minute</option>
               <option value="120">2 minutes</option>
               <option value="300">5 minutes</option>
+              <option value="600">10 minutes</option>
+              <option value="900">15 minutes</option>
+              <option value="1800">30 minutes</option>
+              <option value="3600">1 hour</option>
             </select>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               How long each player has to submit a word before their turn is

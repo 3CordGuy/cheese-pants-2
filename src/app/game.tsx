@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
 import type { GameState, WsMessage } from "../../worker/src/index";
 import { GameLobby } from "./components/GameLobby";
@@ -31,6 +31,7 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function Game(props: { gameId: string }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const wsRef = useRef<WebSocket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -574,6 +575,58 @@ export function Game(props: { gameId: string }) {
     alert("Game link copied to clipboard!");
   };
 
+  const handleUpdateTurnTimeLimit = (newTimeLimit: number) => {
+    if (!wsRef.current) return;
+
+    const message: WsMessage = {
+      type: "update-turn-time-limit",
+      newTimeLimit,
+      playerId: playerId,
+    };
+
+    wsRef.current.send(JSON.stringify(message));
+
+    // Update URL to reflect new time limit
+    updateUrlWithTimeLimit(newTimeLimit);
+  };
+
+  // Add this helper function to update the URL
+  const updateUrlWithTimeLimit = useCallback(
+    (timeLimit: number) => {
+      const currentUrl = new URL(window.location.href);
+
+      // Update turnTimeLimit parameter
+      currentUrl.searchParams.set("turnTimeLimit", timeLimit.toString());
+
+      // Replace URL without full page reload
+      router.replace(currentUrl.pathname + currentUrl.search, {
+        scroll: false,
+      });
+    },
+    [router]
+  );
+
+  // Also listen for game state changes to update URL when server changes timer
+  useEffect(() => {
+    if (gameState && gameState.turnTimeLimit !== undefined) {
+      // Get current turnTimeLimit from URL
+      const currentUrlTimeLimit = parseInt(
+        searchParams.get("turnTimeLimit") || "0",
+        10
+      );
+
+      // If they don't match, update URL
+      if (currentUrlTimeLimit !== gameState.turnTimeLimit) {
+        updateUrlWithTimeLimit(gameState.turnTimeLimit);
+      }
+    }
+  }, [
+    gameState?.turnTimeLimit,
+    searchParams,
+    gameState,
+    updateUrlWithTimeLimit,
+  ]);
+
   // Show loader when joining
   if (isJoining && !gameState) {
     return (
@@ -664,6 +717,7 @@ export function Game(props: { gameId: string }) {
             onAddWord={handleAddWord}
             onDeleteWord={handleDeleteWord}
             onChangeTurn={handleChangeTurn}
+            onUpdateTurnTimeLimit={handleUpdateTurnTimeLimit}
           />
         );
 

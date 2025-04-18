@@ -13,6 +13,7 @@ export type WsMessage =
 	| { type: 'add-word'; word: string; playerId: string }
 	| { type: 'delete-word'; index: number; playerId: string }
 	| { type: 'change-turn'; newCurrentPlayerId: string; playerId: string }
+	| { type: 'update-turn-time-limit'; newTimeLimit: number; playerId: string }
 	| { type: 'game-complete'; sentence: string[] }
 	| { type: 'test-connection' }
 	| { type: 'start-game'; playerId: string };
@@ -96,14 +97,28 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 			lastTurnStartTime: null,
 		};
 
-		// Set up storage operations when state changes
+		// Then load from storage and apply migrations if needed
 		ctx.blockConcurrencyWhile(async () => {
-			// Load existing game state if it exists
 			const storedGameState = await ctx.storage.get<GameState>('gameState');
 			if (storedGameState) {
+				// Migrate fields if they don't exist
+				if (storedGameState.turnTimeLimit === undefined) {
+					storedGameState.turnTimeLimit = 0;
+				}
+				if (storedGameState.lastTurnStartTime === undefined) {
+					storedGameState.lastTurnStartTime = null;
+				}
 				this.gameState = storedGameState;
 			}
 		});
+
+		if (this.gameState.turnTimeLimit === undefined) {
+			this.gameState.turnTimeLimit = 0; // Default to no limit
+		}
+
+		if (this.gameState.lastTurnStartTime === undefined && this.gameState.turnTimeLimit > 0) {
+			this.gameState.lastTurnStartTime = new Date().toISOString(); // Initialize if needed
+		}
 	}
 
 	// Save the current game state to storage
@@ -123,7 +138,7 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 	async checkAndProcessTurnTimeout() {
 		// If game isn't in playing phase or no time limit, exit
 		if (this.gameState.phase !== 'playing' || this.gameState.turnTimeLimit <= 0 || !this.gameState.lastTurnStartTime) {
-			return false; // No timeout occurred
+			return false; // No timeout occurred or no timer active
 		}
 
 		const now = new Date();
@@ -341,6 +356,51 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 				});
 				break;
 
+			case 'update-turn-time-limit':
+				// Only allow the admin to change the time limit
+				if (parsedMsg.playerId !== this.gameState.startedById) {
+					ws.send(JSON.stringify({ type: 'message', data: 'Only the host can change the turn time limit.' }));
+					break;
+				}
+
+				// Ensure we have a valid time limit (0 or positive)
+				const newTimeLimit = Math.max(0, parsedMsg.newTimeLimit);
+				const oldTimeLimit = this.gameState.turnTimeLimit;
+
+				console.log('Updating turn time limit:', { oldTimeLimit, newTimeLimit });
+
+				// Update the time limit
+				this.gameState.turnTimeLimit = newTimeLimit;
+
+				// Always initialize/reset timer when changing to a positive value
+				if (newTimeLimit > 0) {
+					this.gameState.lastTurnStartTime = new Date().toISOString();
+					console.log('Timer enabled, lastTurnStartTime set to:', this.gameState.lastTurnStartTime);
+				} else {
+					// When disabling the timer, set lastTurnStartTime to null
+					this.gameState.lastTurnStartTime = null;
+					console.log('Timer disabled, lastTurnStartTime set to null');
+				}
+
+				// Save the updated game state
+				await this.saveGameState();
+
+				// Log the updated game state for debugging
+				console.log('Updated game state:', {
+					turnTimeLimit: this.gameState.turnTimeLimit,
+					lastTurnStartTime: this.gameState.lastTurnStartTime,
+				});
+
+				// Send a message to all players
+				this.broadcast({
+					type: 'message',
+					data: newTimeLimit > 0 ? `Game host changed turn time limit to ${newTimeLimit} seconds` : 'Game host removed the turn time limit',
+				});
+
+				// Broadcast updated state to all clients
+				this.broadcast({ type: 'get-game-state-response', gameState: this.gameState });
+				break;
+
 			default:
 				if (!this.gameState) {
 					console.error('No game session found');
@@ -529,8 +589,10 @@ export class CheesePants2 extends DurableObject<Env> implements CheesePants2Meth
 		gameSession.currentPlayerIndex = (gameSession.currentPlayerIndex + 1) % gameSession.players.length;
 		gameSession.players[gameSession.currentPlayerIndex].isCurrentTurn = true;
 
-		// Update the turn start time
-		gameSession.lastTurnStartTime = new Date().toISOString();
+		// Update the turn start time only if there's a time limit
+		if (gameSession.turnTimeLimit > 0) {
+			gameSession.lastTurnStartTime = new Date().toISOString();
+		}
 
 		// Save state and broadcast updates
 		await this.saveGameState();

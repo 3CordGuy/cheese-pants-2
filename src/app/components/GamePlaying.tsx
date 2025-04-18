@@ -13,6 +13,7 @@ interface GamePlayingProps {
   onAddWord: (word: string) => void;
   onDeleteWord: (index: number) => void;
   onChangeTurn: (playerId: string) => void;
+  onUpdateTurnTimeLimit: (newTimeLimit: number) => void;
 }
 
 export const GamePlaying = ({
@@ -23,30 +24,36 @@ export const GamePlaying = ({
   onAddWord,
   onDeleteWord,
   onChangeTurn,
+  onUpdateTurnTimeLimit,
 }: GamePlayingProps) => {
   const [wordInput, setWordInput] = useState("");
   const [remainingTime, setRemainingTime] = useState<number | null>(null);
   const [timerWarning, setTimerWarning] = useState<string | null>(null);
+  const [newTimeLimit, setNewTimeLimit] = useState(
+    gameState.turnTimeLimit || 0
+  );
 
+  // Debug logging to check timer state
   useEffect(() => {
+    console.log("Timer debug:", {
+      turnTimeLimit: gameState.turnTimeLimit,
+      lastTurnStartTime: gameState.lastTurnStartTime,
+      remainingTime,
+    });
+  }, [gameState.turnTimeLimit, gameState.lastTurnStartTime, remainingTime]);
+
+  // Timer update effect
+  useEffect(() => {
+    // If no time limit or no last turn start time, don't show timer
     if (!gameState.turnTimeLimit || !gameState.lastTurnStartTime) {
+      console.log("Timer conditions not met:", {
+        turnTimeLimit: gameState.turnTimeLimit,
+        lastTurnStartTime: gameState.lastTurnStartTime,
+      });
       setRemainingTime(null);
       setTimerWarning(null);
-      console.log(
-        "No timer displayed - turnTimeLimit:",
-        gameState.turnTimeLimit,
-        "lastTurnStartTime:",
-        gameState.lastTurnStartTime
-      );
       return;
     }
-
-    console.log(
-      "Timer active - turnTimeLimit:",
-      gameState.turnTimeLimit,
-      "lastTurnStartTime:",
-      gameState.lastTurnStartTime
-    );
 
     const updateTimer = () => {
       const now = new Date();
@@ -57,6 +64,7 @@ export const GamePlaying = ({
       const remaining = Math.max(0, gameState.turnTimeLimit - elapsedSeconds);
       setRemainingTime(remaining);
 
+      // Set warning message based on remaining time
       if (remaining <= 0) {
         setTimerWarning("Time's up! Moving to next player...");
       } else if (remaining <= 10) {
@@ -68,11 +76,16 @@ export const GamePlaying = ({
       }
     };
 
+    // Update immediately and then set interval
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
   }, [gameState.turnTimeLimit, gameState.lastTurnStartTime]);
+
+  // Determine current player's name
+  const currentPlayerName =
+    gameState.players.find((p) => p.isCurrentTurn)?.name || "Unknown";
 
   const handleAddWord = () => {
     if (!wordInput.trim()) return;
@@ -80,8 +93,59 @@ export const GamePlaying = ({
     setWordInput("");
   };
 
-  const currentPlayerName =
-    gameState.players.find((p) => p.isCurrentTurn)?.name || "Unknown";
+  const renderAdminControls = () => {
+    if (!isAdmin) return null;
+
+    return (
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 transition-all duration-300">
+        <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg">
+          <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-3">
+            Host Controls:
+          </h4>
+
+          <div className="mb-4">
+            <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+              You can delete any word by clicking it, change whose turn it is by
+              clicking on their name, or adjust the turn time limit below:
+            </p>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-3 mt-4">
+            <div className="flex-grow">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Turn Time Limit (seconds)
+              </label>
+              <select
+                value={newTimeLimit}
+                onChange={(e) => setNewTimeLimit(parseInt(e.target.value, 10))}
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-black dark:text-white bg-gray-50 dark:bg-gray-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+              >
+                <option value="0">No limit</option>
+                <option value="30">30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="120">2 minutes</option>
+                <option value="300">5 minutes</option>
+                <option value="600">10 minutes</option>
+                <option value="900">15 minutes</option>
+                <option value="1800">30 minutes</option>
+                <option value="3600">1 hour</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => onUpdateTurnTimeLimit(newTimeLimit)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg md:self-end transform transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-md"
+              disabled={newTimeLimit === gameState.turnTimeLimit}
+            >
+              {newTimeLimit === gameState.turnTimeLimit
+                ? "Current Setting"
+                : "Update Timer"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="md:flex md:gap-6">
@@ -93,20 +157,20 @@ export const GamePlaying = ({
               Current Turn: {currentPlayerName}
             </h3>
 
-            {gameState.turnTimeLimit > 0 && remainingTime !== null && (
-              <div className="flex items-center">
-                {isCurrentPlayer && timerWarning && (
-                  <div
-                    className={`mr-2 text-sm italic ${
-                      remainingTime < 10
-                        ? "text-red-600 dark:text-red-400 animate-pulse"
-                        : "text-amber-600 dark:text-amber-400"
-                    }`}
-                  >
-                    {timerWarning}
-                  </div>
-                )}
+            <div className="flex items-center">
+              {isCurrentPlayer && timerWarning && (
+                <div
+                  className={`mr-2 text-sm italic ${
+                    remainingTime !== null && remainingTime < 10
+                      ? "text-red-600 dark:text-red-400 animate-pulse"
+                      : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  {timerWarning}
+                </div>
+              )}
 
+              {gameState.turnTimeLimit > 0 && remainingTime !== null && (
                 <div
                   className={`text-sm font-bold rounded-full px-3 py-1 ${
                     remainingTime < 10
@@ -117,8 +181,8 @@ export const GamePlaying = ({
                   {Math.floor(remainingTime / 60)}:
                   {(remainingTime % 60).toString().padStart(2, "0")}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <h3 className="text-2xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent flex items-center">
@@ -200,18 +264,7 @@ export const GamePlaying = ({
           </div>
         )}
 
-        {isAdmin && !isCurrentPlayer && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl border border-blue-100 dark:border-blue-900 transition-all duration-300">
-            <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg text-sm text-indigo-800 dark:text-indigo-300">
-              <h4 className="font-bold mb-2">Host Controls:</h4>
-              <p>
-                As the host, you can delete any word by clicking it and
-                selecting &quot;Delete Word&quot;. You can also change whose
-                turn it is by clicking on their name in the player list.
-              </p>
-            </div>
-          </div>
-        )}
+        {isAdmin && renderAdminControls()}
       </div>
 
       {/* Sidebar */}
